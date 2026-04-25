@@ -38,7 +38,8 @@ def _save_state(state: InterviewState) -> None:
 
 
 def _reset() -> None:
-    for key in ["state_dict", "_last_voice_input"]:
+    audio_keys = [k for k in st.session_state if isinstance(k, str) and k.startswith("audio_")]
+    for key in ["state_dict", "_last_voice_input"] + audio_keys:
         st.session_state.pop(key, None)
 
 
@@ -121,6 +122,10 @@ if _active:
 if voice_enabled and not voice_muted:
     bot_msgs = [m for m in state.messages if m["role"] == "assistant"]
     if bot_msgs:
-        from ui.voice_component import speech_output
-        # Use total message count as a stable key so only new messages get spoken
-        speech_output(bot_msgs[-1]["content"], len(state.messages))
+        from ui.voice_component import text_to_speech_audio
+        audio_key = f"audio_{len(state.messages)}"
+        if audio_key not in st.session_state:
+            with st.spinner("Generating voice…"):
+                st.session_state[audio_key] = text_to_speech_audio(bot_msgs[-1]["content"])
+            # Render player only when just generated so autoplay fires exactly once
+            st.audio(st.session_state[audio_key], format="audio/mp3", autoplay=True)
