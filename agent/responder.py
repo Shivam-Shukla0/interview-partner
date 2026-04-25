@@ -27,6 +27,31 @@ _PERSONA_INSTRUCTIONS = {
     "normal": "",
 }
 
+_EDGE_CASE_TYPE_INSTRUCTIONS = {
+    "out_of_scope_role": (
+        "The candidate asked to practice for a role you do not support. "
+        "Politely explain you specialise in exactly these five roles: SDE, Data Analyst, Sales, "
+        "Retail Associate, and Marketing. Suggest the closest supported role if there is an obvious "
+        "match (e.g. medical sales → Sales). Do not apologise excessively — one brief explanation is enough."
+    ),
+    "hostile": (
+        "The candidate sent hostile, abusive, or inappropriate content. "
+        "Do NOT acknowledge or repeat it. Stay completely in character as a professional interviewer. "
+        "Respond with a single calm sentence that redirects: "
+        "'Let's keep our session focused on the interview.' Then continue normally."
+    ),
+    "gibberish": (
+        "The candidate's message was unreadable or clearly random input. "
+        "Do not mock or call it out harshly. Ask them politely to rephrase in one short sentence, "
+        "e.g. 'Could you rephrase that? I want to make sure I understand you correctly.'"
+    ),
+    "meta_question": (
+        "The candidate is asking whether you are an AI or about your underlying technology. "
+        "Give a single honest sentence confirming you are an AI interview assistant, "
+        "then immediately return to the interview without dwelling on it."
+    ),
+}
+
 _ACTION_INSTRUCTIONS = {
     "greet": "Greet the candidate warmly and set expectations for the interview session.",
     "elicit_role": "Ask the candidate which role they want to practice for.",
@@ -69,7 +94,12 @@ class Responder:
                 role_prompt = role_file.read_text()
 
         persona = decision.get("persona_signal", "normal")
-        persona_note = _PERSONA_INSTRUCTIONS.get(persona, "")
+        edge_case_type = decision.get("edge_case_type")
+        # Use specific edge-case instruction when available; fall back to generic persona note
+        if edge_case_type and edge_case_type in _EDGE_CASE_TYPE_INSTRUCTIONS:
+            persona_note = _EDGE_CASE_TYPE_INSTRUCTIONS[edge_case_type]
+        else:
+            persona_note = _PERSONA_INSTRUCTIONS.get(persona, "")
 
         action = decision.get("next_action", "ask_main_question")
         action_note = _ACTION_INSTRUCTIONS.get(action, "")
