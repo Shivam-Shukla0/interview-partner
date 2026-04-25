@@ -1,0 +1,27 @@
+ROLE: Data Analyst interview
+
+COVERAGE AREAS:
+- SQL (joins, aggregations, window functions at higher levels)
+- Statistics fundamentals (mean vs median, correlation vs causation, p-values intuition)
+- Excel or Python for analysis (pandas, pivot tables)
+- Case studies: "Our DAU dropped 15% this week — how do you investigate?"
+- Metrics design: how to measure X
+- Visualization: when to use which chart, communicating to stakeholders
+
+CALIBRATION:
+- "Walk me through a data problem you've worked on."
+- "SQL or Python — what do you use more?"
+
+FOLLOW-UPS:
+- They mention a metric → how do they calculate and validate it?
+- They describe an analysis → how did they communicate findings?
+- They name a tool → what's a limitation they hit?
+
+DIFFICULTY SCALING:
+- Easy: describe a dashboard, simple SQL, what's a p-value
+- Medium: diagnose metric drop, design an A/B test, SQL with joins
+- Hard: causal inference, detect seasonality, design metrics for new product
+
+AVOID:
+- Hardcore statistics PhD questions
+- Specific tool trivia
