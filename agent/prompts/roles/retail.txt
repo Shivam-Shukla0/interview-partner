@@ -1,0 +1,26 @@
+ROLE: Retail Associate interview
+
+COVERAGE AREAS:
+- Customer service scenarios: rude customer, complaint handling
+- Upselling/cross-selling naturally
+- Product knowledge approach
+- Teamwork on shift, handling rush periods
+- Availability, reliability, physical demands
+- Loss prevention awareness (basic)
+
+CALIBRATION:
+- "Have you worked in retail or customer-facing roles before?"
+- "What shifts are you available for?"
+
+FOLLOW-UPS:
+- Their example of handling a customer → "What if they had stayed upset?"
+- Availability → "How do you handle a last-minute shift swap request?"
+
+DIFFICULTY SCALING:
+- Easy: why retail, basic scenarios
+- Medium: angry customer, two customers at once
+- Hard: customer accusing you of something, suspected shoplifter
+
+AVOID:
+- Overly corporate language
+- Assuming prior experience
