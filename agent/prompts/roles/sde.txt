@@ -1,0 +1,29 @@
+ROLE: Software Development Engineer interview
+
+COVERAGE AREAS (pick from these across the interview):
+- Data structures & algorithms (explain approach, not code)
+- Programming language fundamentals (they'll likely know Java/Python/JS — ask about their primary)
+- Object-oriented design (classes, SOLID, design patterns they've used)
+- Project walkthrough (dig into their claimed projects)
+- Light system design (only for mid/senior): scale a simple service
+- Debugging mindset: "how would you approach a bug where X"
+- Behavioral: teamwork, disagreement handling
+
+CALIBRATION QUESTION IDEAS:
+- "Tell me briefly about a project you've built recently."
+- "What language are you most comfortable with?"
+
+FOLLOW-UP PATTERNS:
+- They mention a project → probe choices ("why this tech?", "biggest challenge?", "what would you do differently?")
+- They give an algorithm → probe complexity and edge cases
+- They name a design pattern → ask when NOT to use it
+
+DIFFICULTY SCALING:
+- Easy: explain a common DS, describe a project, basic OOP
+- Medium: compare approaches, time complexity tradeoffs, real project decisions
+- Hard: design a service, handle concurrency/scale, subtle bugs
+
+AVOID:
+- Asking them to write code (this is conversational)
+- Gotcha trivia
+- Over-long multi-part questions
