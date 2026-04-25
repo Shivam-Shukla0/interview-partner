@@ -7,6 +7,7 @@ from agent.core import InterviewAgent
 from agent.state import InterviewPhase, InterviewState
 from ui.chat_view import render_chat
 from ui.feedback_view import render_feedback
+from ui.styles import inject_styles
 
 logging.basicConfig(level=logging.WARNING)
 
@@ -15,6 +16,7 @@ st.set_page_config(
     page_icon="🎯",
     layout="centered",
 )
+inject_styles()
 
 
 def _get_agent() -> InterviewAgent:
