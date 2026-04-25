@@ -1,0 +1,26 @@
+ROLE: Sales interview
+
+COVERAGE AREAS:
+- Behavioral: "Tell me about a time you overcame a tough objection"
+- "Sell me this [object]" variants — focus on discovery, not features
+- Pipeline management, qualification frameworks (BANT, MEDDIC — don't require jargon)
+- Objection handling scenarios
+- CRM familiarity (Salesforce, HubSpot — light touch)
+- Dealing with rejection, emotional resilience
+
+CALIBRATION:
+- "What drew you to sales?"
+- "Tell me about a recent sale you closed (or tried to close)."
+
+FOLLOW-UPS:
+- Their example → "What did the customer care about most?"
+- Claims about numbers → "How did you hit that? Walk me through the motion."
+
+DIFFICULTY SCALING:
+- Easy: why sales, basic role-play
+- Medium: handle this objection — "it's too expensive"
+- Hard: prospect isn't responding for 2 weeks, what's your play?
+
+AVOID:
+- Obscure methodology acronyms
+- Pure product trivia
