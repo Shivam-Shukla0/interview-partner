@@ -3,6 +3,7 @@ import logging
 
 import streamlit as st
 
+import config
 from agent.core import InterviewAgent
 from agent.state import InterviewPhase, InterviewState
 from ui.chat_view import render_chat
@@ -45,21 +46,48 @@ def _reset() -> None:
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.title("Interview Partner")
+    st.markdown(
+        '<p style="font-size:1.1rem;font-weight:800;color:#111827;'
+        'margin:0 0 0.75rem 0;letter-spacing:-0.01em">Interview Partner</p>',
+        unsafe_allow_html=True,
+    )
 
     state = _get_state()
     role = state.candidate_profile.role
+
     if role:
-        from config import ROLE_DISPLAY_NAMES
-        st.markdown(f"**Role:** {ROLE_DISPLAY_NAMES.get(role, role)}")
-        st.markdown(f"**Phase:** {state.phase.value}")
-        st.markdown(f"**Questions:** {state.question_count}")
         persona = state.candidate_profile.detected_persona
-        if persona:
-            st.markdown(f"**Persona:** {persona}")
+        persona_card = (
+            f'<div class="sidebar-card">'
+            f'<div class="card-label">Persona</div>'
+            f'<span class="badge badge-purple">{persona.replace("_", " ").title()}</span>'
+            f'</div>'
+        ) if persona else ""
+
+        st.markdown(
+            f'<div class="sidebar-cards">'
+            f'  <div class="sidebar-card">'
+            f'    <div class="card-label">Role</div>'
+            f'    <span class="badge badge-indigo">{config.ROLE_DISPLAY_NAMES.get(role, role)}</span>'
+            f'  </div>'
+            f'  <div class="sidebar-card">'
+            f'    <div class="card-label">Phase</div>'
+            f'    <span class="badge badge-blue">{state.phase.value}</span>'
+            f'  </div>'
+            f'  <div class="sidebar-card">'
+            f'    <div class="card-label">Questions</div>'
+            f'    <span style="font-size:14px;font-weight:600;color:#374151">'
+            f'      {state.question_count}&nbsp;/&nbsp;{config.TARGET_QUESTION_COUNT}'
+            f'    </span>'
+            f'  </div>'
+            f'  {persona_card}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
     st.divider()
 
+    st.markdown('<p class="sidebar-section-label">Settings</p>', unsafe_allow_html=True)
     show_reasoning = st.toggle("Show bot reasoning", value=False)
     voice_enabled = st.toggle("Voice mode", value=False)
     voice_muted = False
@@ -72,15 +100,33 @@ with st.sidebar:
         _reset()
         st.rerun()
 
+
 # ── Main ──────────────────────────────────────────────────────────────────────
-st.title("Interview Practice Partner")
+st.markdown(
+    '<div class="app-header">'
+    '<div class="app-header-title">Interview Practice Partner</div>'
+    '<div class="app-header-subtitle">AI-powered mock interview agent</div>'
+    '</div>',
+    unsafe_allow_html=True,
+)
 
 state = _get_state()
 agent = _get_agent()
 
 render_chat(state.messages)
 
-# Show feedback report if in FEEDBACK phase
+# ── Voice output — inline right below the last bot message ────────────────────
+if voice_enabled and not voice_muted:
+    bot_msgs = [m for m in state.messages if m["role"] == "assistant"]
+    if bot_msgs:
+        from ui.voice_component import text_to_speech_audio
+        audio_key = f"audio_{len(state.messages)}"
+        if audio_key not in st.session_state:
+            with st.spinner("Generating voice…"):
+                st.session_state[audio_key] = text_to_speech_audio(bot_msgs[-1]["content"])
+            st.audio(st.session_state[audio_key], format="audio/mp3", autoplay=True)
+
+# ── Feedback report ───────────────────────────────────────────────────────────
 if state.phase == InterviewPhase.FEEDBACK and state.feedback_result:
     render_feedback(state.feedback_result)
     if "error" not in state.feedback_result:
@@ -89,7 +135,7 @@ if state.phase == InterviewPhase.FEEDBACK and state.feedback_result:
             _reset()
             st.rerun()
 
-# Show planner reasoning panel
+# ── Planner reasoning panel ───────────────────────────────────────────────────
 if show_reasoning and state.planner_logs:
     with st.expander("Bot reasoning (last 3 turns)", expanded=False):
         for log in state.planner_logs[-3:]:
@@ -99,7 +145,6 @@ if show_reasoning and state.planner_logs:
 _active = state.phase not in (InterviewPhase.FEEDBACK, InterviewPhase.END)
 
 if _active:
-    # Voice input — mic button rendered above the text input
     if voice_enabled:
         from ui.voice_component import speech_input
         transcript = speech_input()
@@ -110,22 +155,9 @@ if _active:
             _save_state(updated_state)
             st.rerun()
 
-    # Text input (always available)
     user_input = st.chat_input("Type your message here…")
     if user_input:
         with st.spinner("Thinking…"):
             _, updated_state = agent.turn(state, user_input)
         _save_state(updated_state)
         st.rerun()
-
-# ── Voice output (TTS) ────────────────────────────────────────────────────────
-if voice_enabled and not voice_muted:
-    bot_msgs = [m for m in state.messages if m["role"] == "assistant"]
-    if bot_msgs:
-        from ui.voice_component import text_to_speech_audio
-        audio_key = f"audio_{len(state.messages)}"
-        if audio_key not in st.session_state:
-            with st.spinner("Generating voice…"):
-                st.session_state[audio_key] = text_to_speech_audio(bot_msgs[-1]["content"])
-            # Render player only when just generated so autoplay fires exactly once
-            st.audio(st.session_state[audio_key], format="audio/mp3", autoplay=True)
