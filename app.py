@@ -36,11 +36,11 @@ def _save_state(state: InterviewState) -> None:
 
 
 def _reset() -> None:
-    for key in ["state_dict"]:
+    for key in ["state_dict", "_last_voice_input"]:
         st.session_state.pop(key, None)
 
 
-# --- Sidebar ---
+# ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.title("Interview Partner")
 
@@ -58,12 +58,18 @@ with st.sidebar:
     st.divider()
 
     show_reasoning = st.toggle("Show bot reasoning", value=False)
+    voice_enabled = st.toggle("Voice mode", value=False)
+    voice_muted = False
+    if voice_enabled:
+        voice_muted = st.toggle("Mute voice output", value=False)
+
+    st.divider()
 
     if st.button("Restart", use_container_width=True):
         _reset()
         st.rerun()
 
-# --- Main ---
+# ── Main ──────────────────────────────────────────────────────────────────────
 st.title("Interview Practice Partner")
 
 state = _get_state()
@@ -86,11 +92,33 @@ if show_reasoning and state.planner_logs:
         for log in state.planner_logs[-3:]:
             st.json(log)
 
-# Chat input — disabled during feedback
-if state.phase not in (InterviewPhase.FEEDBACK, InterviewPhase.END):
+# ── Input handling ────────────────────────────────────────────────────────────
+_active = state.phase not in (InterviewPhase.FEEDBACK, InterviewPhase.END)
+
+if _active:
+    # Voice input — mic button rendered above the text input
+    if voice_enabled:
+        from ui.voice_component import speech_input
+        transcript = speech_input()
+        if transcript and transcript != st.session_state.get("_last_voice_input"):
+            st.session_state["_last_voice_input"] = transcript
+            with st.spinner("Thinking…"):
+                _, updated_state = agent.turn(state, transcript)
+            _save_state(updated_state)
+            st.rerun()
+
+    # Text input (always available)
     user_input = st.chat_input("Type your message here…")
     if user_input:
         with st.spinner("Thinking…"):
             _, updated_state = agent.turn(state, user_input)
         _save_state(updated_state)
         st.rerun()
+
+# ── Voice output (TTS) ────────────────────────────────────────────────────────
+if voice_enabled and not voice_muted:
+    bot_msgs = [m for m in state.messages if m["role"] == "assistant"]
+    if bot_msgs:
+        from ui.voice_component import speech_output
+        # Use total message count as a stable key so only new messages get spoken
+        speech_output(bot_msgs[-1]["content"], len(state.messages))
