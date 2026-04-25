@@ -108,10 +108,12 @@ class InterviewAgent:
                 state.candidate_profile.role = inferred
 
         # Phase transitions
-        if action == "generate_feedback" or decision.get("should_wrap_up") and action == "generate_feedback":
+        if action == "generate_feedback":
             state.phase = InterviewPhase.FEEDBACK
 
-        elif action == "wrap_up":
+        elif action == "wrap_up" or (
+            decision.get("should_wrap_up") and state.phase == InterviewPhase.INTERVIEWING
+        ):
             state.phase = InterviewPhase.WRAPPING_UP
 
         elif action in ("ask_main_question", "follow_up"):
@@ -130,7 +132,7 @@ class InterviewAgent:
         if quality != "n/a" and state.qa_history:
             state.qa_history[-1].quality = quality
 
-        # Check wrap-up condition
+        # Hard cap: force wrap-up once MAX_QUESTION_COUNT is reached
         if (
             state.question_count >= config.MAX_QUESTION_COUNT
             and state.phase == InterviewPhase.INTERVIEWING

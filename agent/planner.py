@@ -125,6 +125,10 @@ class Planner:
         phase = state.phase.value
         q_count = state.question_count
 
+        # Last 2 answer qualities for wrap-up decision
+        recent_qualities = [qa.quality for qa in state.qa_history[-2:] if qa.quality]
+        qualities_str = ", ".join(recent_qualities) if recent_qualities else "none yet"
+
         # last 6 turns to keep tokens low
         recent = state.messages[-6:] if len(state.messages) > 6 else state.messages
         history_lines = []
@@ -133,12 +137,29 @@ class Planner:
             history_lines.append(f"{prefix}: {m['content']}")
         history = "\n".join(history_lines)
 
+        wrap_hint = ""
+        if q_count >= config.TARGET_QUESTION_COUNT:
+            wrap_hint = (
+                f"\nWRAP-UP SIGNAL: {q_count} questions asked (target is {config.TARGET_QUESTION_COUNT}). "
+                f"If the last 2 answer qualities are both 'strong', set should_wrap_up=true and next_action='wrap_up'. "
+                f"If {q_count} >= {config.MAX_QUESTION_COUNT}, always set should_wrap_up=true."
+            )
+        elif q_count >= config.MAX_QUESTION_COUNT:
+            wrap_hint = f"\nWRAP-UP SIGNAL: Maximum question count ({config.MAX_QUESTION_COUNT}) reached — set should_wrap_up=true and next_action='wrap_up'."
+
+        summary_section = ""
+        if state.summary_note:
+            summary_section = f"\nEARLIER CONVERSATION SUMMARY:\n{state.summary_note}\n"
+
         return (
             f"CURRENT PHASE: {phase}\n"
             f"ROLE: {role}\n"
-            f"QUESTIONS ASKED SO FAR: {q_count} (target: {config.TARGET_QUESTION_COUNT})\n"
+            f"QUESTIONS ASKED SO FAR: {q_count} (target: {config.TARGET_QUESTION_COUNT}, max: {config.MAX_QUESTION_COUNT})\n"
             f"CURRENT DIFFICULTY: {state.current_difficulty}\n"
-            f"DETECTED PERSONA SO FAR: {state.candidate_profile.detected_persona or 'unknown'}\n\n"
+            f"DETECTED PERSONA SO FAR: {state.candidate_profile.detected_persona or 'unknown'}\n"
+            f"RECENT ANSWER QUALITIES: {qualities_str}"
+            f"{wrap_hint}"
+            f"{summary_section}\n\n"
             f"RECENT CONVERSATION:\n{history}\n\n"
             f"LATEST USER MESSAGE: {user_message}"
         )
