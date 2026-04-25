@@ -143,26 +143,29 @@ class InterviewAgent:
             if inferred:
                 state.candidate_profile.role = inferred
 
-        # Phase transitions
+        # Phase transitions — FEEDBACK and END are terminal; nothing can override them
+        _terminal = (InterviewPhase.FEEDBACK, InterviewPhase.END)
+
         if action == "generate_feedback":
             state.phase = InterviewPhase.FEEDBACK
 
-        elif action == "wrap_up" or (
-            decision.get("should_wrap_up") and state.phase == InterviewPhase.INTERVIEWING
-        ):
-            state.phase = InterviewPhase.WRAPPING_UP
+        elif state.phase not in _terminal:
+            if action == "wrap_up" or (
+                decision.get("should_wrap_up") and state.phase == InterviewPhase.INTERVIEWING
+            ):
+                state.phase = InterviewPhase.WRAPPING_UP
 
-        elif action in ("ask_main_question", "follow_up"):
-            if state.phase not in (InterviewPhase.INTERVIEWING, InterviewPhase.WRAPPING_UP):
-                state.phase = InterviewPhase.INTERVIEWING
-            if action == "ask_main_question":
-                state.question_count += 1
+            elif action in ("ask_main_question", "follow_up"):
+                if state.phase not in (InterviewPhase.INTERVIEWING, InterviewPhase.WRAPPING_UP):
+                    state.phase = InterviewPhase.INTERVIEWING
+                if action == "ask_main_question":
+                    state.question_count += 1
 
-        elif action == "calibrate":
-            state.phase = InterviewPhase.CALIBRATION
+            elif action == "calibrate":
+                state.phase = InterviewPhase.CALIBRATION
 
-        elif action == "elicit_role":
-            state.phase = InterviewPhase.ROLE_SELECTION
+            elif action == "elicit_role":
+                state.phase = InterviewPhase.ROLE_SELECTION
 
         # Update answer quality on last QA pair
         if quality != "n/a" and state.qa_history:
