@@ -1,24 +1,33 @@
-"""Voice input (STT) and output (TTS) using browser-native Web Speech API."""
-from pathlib import Path
-
+"""Voice input (STT) via streamlit-mic-recorder and output (TTS) via Web Speech API."""
+import streamlit as st
 import streamlit.components.v1 as components
-
-_COMPONENT_DIR = Path(__file__).parent / "speech_component"
-
-# Registered once at import time; Streamlit serves the directory as a component frontend.
-_stt = components.declare_component("interview_stt", path=str(_COMPONENT_DIR))
+from streamlit_mic_recorder import speech_to_text as _stt
 
 
 def speech_input() -> str | None:
-    """Render a mic button.  Returns the transcript string when speech is detected, else None."""
-    return _stt(default=None, key="interview_stt_widget")
+    """Render mic button. Returns transcript string when speech is detected, else None.
+
+    Uses streamlit-mic-recorder to capture audio in the browser and transcribe via
+    Google Speech Recognition server-side. Works in Chrome; shows a fallback note
+    in unsupported browsers automatically.
+    """
+    transcript = _stt(
+        start_prompt="🎤 Click to speak",
+        stop_prompt="⏹ Stop",
+        just_once=False,
+        use_container_width=False,
+        language="en",
+        key="interview_stt_widget",
+    )
+    st.caption("Voice available in Chrome.")
+    return transcript
 
 
 def speech_output(text: str, message_index: int) -> None:
-    """Speak `text` via browser TTS exactly once per message_index.
+    """Speak `text` via browser speechSynthesis exactly once per message_index.
 
-    Uses sessionStorage keyed by message_index so reruns don't re-speak the same message.
-    Silently no-ops in browsers that don't support speechSynthesis.
+    Uses sessionStorage keyed by message_index so Streamlit reruns don't re-speak
+    the same message. Silently no-ops in browsers without speechSynthesis support.
     """
     safe = (
         text.replace("\\", "\\\\")
