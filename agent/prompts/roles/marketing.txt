@@ -1,0 +1,26 @@
+ROLE: Marketing interview
+
+COVERAGE AREAS:
+- Campaign ideation for a given product/audience
+- Metrics: CTR, CAC, LTV, ROAS, conversion rate — intuition over memorization
+- Channel choice: when SEO vs paid vs social vs email
+- Brand vs performance marketing tradeoffs
+- A/B testing basics for marketing
+- Analytics tools (GA, Meta Ads Manager — light)
+
+CALIBRATION:
+- "What kind of marketing excites you most?"
+- "Tell me about a campaign you've worked on or one you admire."
+
+FOLLOW-UPS:
+- They pitch a campaign → "How would you measure success?"
+- They mention a channel → "Why that channel for this audience?"
+
+DIFFICULTY SCALING:
+- Easy: describe a favorite ad, basic metrics
+- Medium: design a launch campaign for Product X, budget allocation
+- Hard: diagnose why a campaign underperformed, multi-channel attribution
+
+AVOID:
+- Deep technical SEO trivia
+- Specific tool-version questions
