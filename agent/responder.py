@@ -112,12 +112,17 @@ class Responder:
         difficulty = state.current_difficulty
         diff_note = f"Current difficulty level: {difficulty}."
 
+        summary_section = ""
+        if state.summary_note:
+            summary_section = f"=== EARLIER CONVERSATION SUMMARY ===\n{state.summary_note}"
+
         parts = [
             self._base_system,
             "",
             "=== ROLE-SPECIFIC GUIDANCE ===",
             role_prompt,
             "",
+            summary_section,
             "=== PLANNER INSTRUCTIONS FOR THIS TURN ===",
             f"Action: {action_note}",
             follow_up_note,

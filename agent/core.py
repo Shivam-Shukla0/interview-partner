@@ -57,13 +57,15 @@ class InterviewAgent:
         """
         Process one user turn:
         1. Append user message to state
-        2. Call planner → decision
-        3. Update state based on decision
-        4. If FEEDBACK phase: call feedback engine
-        5. Else: call responder → bot message
-        6. Append bot message, return
+        2. Prune conversation if too long
+        3. Call planner → decision
+        4. Update state based on decision
+        5. If FEEDBACK phase: call feedback engine
+        6. Else: call responder → bot message
+        7. Append bot message, return
         """
         state.messages.append({"role": "user", "content": user_message})
+        state = self._prune_if_needed(state)
 
         decision = self._planner.decide(state, user_message)
         state = self._apply_decision(state, decision, user_message)
@@ -85,6 +87,40 @@ class InterviewAgent:
         self._maybe_record_qa(state, decision, user_message, bot_message)
 
         return bot_message, state
+
+    def _prune_if_needed(self, state: InterviewState) -> InterviewState:
+        """When messages exceed 20, summarize older ones and keep the last 12 verbatim."""
+        if len(state.messages) <= 20:
+            return state
+
+        keep = 12
+        older = state.messages[:-keep]
+        state.messages = state.messages[-keep:]
+
+        lines = []
+        for m in older:
+            speaker = "CANDIDATE" if m["role"] == "user" else "INTERVIEWER"
+            lines.append(f"{speaker}: {m['content'][:300]}")
+        older_text = "\n".join(lines)
+
+        existing_prefix = f"Previous summary:\n{state.summary_note}\n\n" if state.summary_note else ""
+        prompt = (
+            f"{existing_prefix}Summarise the following earlier interview conversation in 3-5 sentences. "
+            "Capture: role discussed, candidate's background/experience level, and topics already covered.\n\n"
+            f"{older_text}"
+        )
+
+        try:
+            state.summary_note = self._llm.complete(
+                system="You are a concise summariser. Output 3-5 sentences only. No headers.",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=300,
+            )
+            logger.info("Conversation pruned; summary stored (%d chars)", len(state.summary_note))
+        except Exception as exc:
+            logger.warning("Memory pruning summary failed: %s", exc)
+
+        return state
 
     def _apply_decision(
         self, state: InterviewState, decision: dict, user_message: str
