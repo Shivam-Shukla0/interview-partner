@@ -42,6 +42,7 @@ class InterviewState:
     current_difficulty: str = "easy"                      # easy / medium / hard
     planner_logs: list[dict] = field(default_factory=list)
     feedback_result: Optional[dict] = None
+    summary_note: Optional[str] = None  # LLM-generated summary of pruned older messages
 
     # --- serialization helpers for st.session_state ---
 
@@ -67,6 +68,7 @@ class InterviewState:
             "current_difficulty": self.current_difficulty,
             "planner_logs": copy.deepcopy(self.planner_logs),
             "feedback_result": self.feedback_result,
+            "summary_note": self.summary_note,
         }
 
     @classmethod
@@ -82,5 +84,6 @@ class InterviewState:
             current_difficulty=d.get("current_difficulty", "easy"),
             planner_logs=d["planner_logs"],
             feedback_result=d.get("feedback_result"),
+            summary_note=d.get("summary_note"),
         )
         return state
