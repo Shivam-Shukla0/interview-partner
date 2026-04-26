@@ -12,7 +12,7 @@ def _score_class(score: int) -> str:
     return "score-low"
 
 
-def render_feedback(feedback: dict) -> None:
+def render_feedback(feedback: dict, focus_shifts: int = 0) -> None:
     if "error" in feedback:
         st.error(f"Feedback generation failed: {feedback['error']}")
         return
@@ -117,6 +117,30 @@ def render_feedback(feedback: dict) -> None:
             f'<div class="next-step-item">'
             f'<span class="next-step-arrow">→</span>'
             f'<span>{step_esc}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    # Proctoring summary
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown(
+        '<h3 style="font-size:1rem;font-weight:700;color:#374151;margin-bottom:0.6rem">'
+        "Proctoring Summary</h3>",
+        unsafe_allow_html=True,
+    )
+    if focus_shifts == 0:
+        st.markdown(
+            '<div style="background:#F0FDF4;border-left:4px solid #10B981;border-radius:0 8px 8px 0;'
+            'padding:10px 16px;color:#065F46;font-size:14px">'
+            '✓ Perfect focus throughout the interview — 0 focus shifts detected.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            f'<div style="background:#FFFBEB;border-left:4px solid #F59E0B;border-radius:0 8px 8px 0;'
+            f'padding:10px 16px;color:#92400E;font-size:14px">'
+            f'Note: focus shifted {focus_shifts} time{"s" if focus_shifts != 1 else ""} during the interview.'
             f'</div>',
             unsafe_allow_html=True,
         )
