@@ -93,6 +93,8 @@ class Planner:
 
     def decide(self, state: InterviewState, user_message: str) -> dict:
         """Analyze current state + user message and return a structured decision."""
+        resume_len = len(state.candidate_profile.resume_text) if state.candidate_profile.resume_text else 0
+        print(f"[planner] resume_text length: {resume_len}", flush=True)
         context = self._build_context(state, user_message)
         messages = [{"role": "user", "content": context}]
 
@@ -152,11 +154,22 @@ class Planner:
             summary_section = f"\nEARLIER CONVERSATION SUMMARY:\n{state.summary_note}\n"
 
         resume_section = ""
+        resume_instruction = ""
         if state.candidate_profile.resume_text:
             truncated = state.candidate_profile.resume_text[:2000]
             resume_section = (
-                f"\nRESUME CONTEXT (use this to ask personalized questions about projects, "
-                f"skills, and experience the candidate has actually listed):\n{truncated}\n"
+                f"\nRESUME CONTEXT (candidate's actual background — use this to ask personalized questions):\n"
+                f"{truncated}\n"
+            )
+            resume_instruction = (
+                "\nCRITICAL — RESUME IS PRESENT: You MUST set topic_to_probe to a specific project, "
+                "skill, technology, or experience named in the RESUME CONTEXT above. "
+                "This applies to next_action values: ask_main_question, calibrate, AND follow_up. "
+                "Example: if the resume lists 'Java interpreter project', set topic_to_probe to "
+                "'Java interpreter project — ask about the design choices'. "
+                "The internal_note MUST name which resume item you are probing. "
+                "Do NOT ask generic questions like 'what programming have you done' "
+                "when the resume already lists specific work."
             )
 
         return (
@@ -171,4 +184,5 @@ class Planner:
             f"{resume_section}\n"
             f"RECENT CONVERSATION:\n{history}\n\n"
             f"LATEST USER MESSAGE: {user_message}"
+            f"{resume_instruction}"
         )
