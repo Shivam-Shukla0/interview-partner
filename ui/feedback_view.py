@@ -1,5 +1,7 @@
 """Feedback report rendering — color-coded, evidence-anchored."""
 import html as _html
+from datetime import datetime
+from typing import Optional
 
 import streamlit as st
 
@@ -12,7 +14,83 @@ def _score_class(score: int) -> str:
     return "score-low"
 
 
-def render_feedback(feedback: dict, focus_shifts: int = 0) -> None:
+def _build_transcript_md(
+    feedback: dict,
+    qa_history: list,
+    role: Optional[str],
+    persona: Optional[str],
+    focus_shifts: int,
+) -> str:
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    scores = feedback.get("scores", {})
+    lines = [
+        "# Interview Transcript",
+        "",
+        f"**Date:** {now}",
+        f"**Role:** {role or 'Not specified'}",
+        f"**Detected Persona:** {persona or 'N/A'}",
+        f"**Total Questions:** {len(qa_history)}",
+        f"**Focus Shifts:** {focus_shifts}",
+        "",
+        "---",
+        "",
+        "## Questions & Answers",
+        "",
+    ]
+    for i, qa in enumerate(qa_history, 1):
+        lines += [
+            f"### Q{i}: {qa.question}",
+            "",
+            f"**Answer:** {qa.answer}",
+            "",
+            f"*Quality: {qa.quality or 'N/A'} | Topic: {qa.topic}*",
+            "",
+        ]
+
+    lines += [
+        "---",
+        "",
+        "## Feedback Summary",
+        "",
+        f"**Overall:** {feedback.get('overall', '')}",
+        "",
+        "### Scores",
+        "",
+        f"- Communication: {scores.get('communication', 'N/A')}/10",
+        f"- Domain Depth: {scores.get('domain_depth', 'N/A')}/10",
+        f"- Problem-Solving: {scores.get('problem_solving', 'N/A')}/10",
+        f"- Composure: {scores.get('composure', 'N/A')}/10",
+        "",
+        "### Top Strengths",
+        "",
+    ]
+    for s in feedback.get("strengths", []):
+        lines += [f"- **{s.get('point', '')}**", f'  > "{s.get("quote", "")}"', ""]
+
+    lines += ["### Areas to Improve", ""]
+    for imp in feedback.get("improvements", []):
+        lines += [f"- **{imp.get('point', '')}:** {imp.get('suggestion', '')}", ""]
+
+    lines += ["### Recommended Next Steps", ""]
+    for step in feedback.get("next_steps", []):
+        lines.append(f"- {step}")
+
+    lines += [
+        "",
+        "---",
+        "",
+        f"*Focus Shifts: {focus_shifts}*",
+    ]
+    return "\n".join(lines)
+
+
+def render_feedback(
+    feedback: dict,
+    focus_shifts: int = 0,
+    qa_history: Optional[list] = None,
+    role: Optional[str] = None,
+    persona: Optional[str] = None,
+) -> None:
     if "error" in feedback:
         st.error(f"Feedback generation failed: {feedback['error']}")
         return
@@ -143,4 +221,17 @@ def render_feedback(feedback: dict, focus_shifts: int = 0) -> None:
             f'Note: focus shifted {focus_shifts} time{"s" if focus_shifts != 1 else ""} during the interview.'
             f'</div>',
             unsafe_allow_html=True,
+        )
+
+    # Transcript export
+    if qa_history is not None:
+        st.markdown("<br>", unsafe_allow_html=True)
+        transcript_md = _build_transcript_md(feedback, qa_history, role, persona, focus_shifts)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        st.download_button(
+            label="Download interview transcript",
+            data=transcript_md,
+            file_name=f"interview_transcript_{timestamp}.md",
+            mime="text/markdown",
+            use_container_width=True,
         )

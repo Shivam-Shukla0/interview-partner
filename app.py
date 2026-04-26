@@ -194,7 +194,13 @@ render_chat(state.messages, inline_audio=inline_audio)
 
 # ── Feedback report ───────────────────────────────────────────────────────────
 if state.phase == InterviewPhase.FEEDBACK and state.feedback_result:
-    render_feedback(state.feedback_result, focus_shifts=focus_shifts)
+    render_feedback(
+        state.feedback_result,
+        focus_shifts=focus_shifts,
+        qa_history=state.qa_history,
+        role=state.candidate_profile.role,
+        persona=state.candidate_profile.detected_persona,
+    )
     if "error" not in state.feedback_result:
         st.divider()
         if st.button("Start a new interview", use_container_width=True):
