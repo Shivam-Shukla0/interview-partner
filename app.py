@@ -50,7 +50,7 @@ def _save_state(state: InterviewState) -> None:
 
 def _reset() -> None:
     audio_keys = [k for k in st.session_state if isinstance(k, str) and k.startswith("audio_")]
-    for key in ["state_dict", "_last_voice_input", "focus_shifts"] + audio_keys:
+    for key in ["state_dict", "_last_voice_input", "focus_shifts", "_resume_text", "_resume_filename"] + audio_keys:
         st.session_state.pop(key, None)
 
 
@@ -94,6 +94,35 @@ with st.sidebar:
             f'</div>',
             unsafe_allow_html=True,
         )
+
+    # Resume upload
+    st.markdown('<p class="sidebar-section-label">Resume (optional)</p>', unsafe_allow_html=True)
+    uploaded_pdf = st.file_uploader("Upload PDF for personalized questions", type=["pdf"], label_visibility="collapsed")
+    if uploaded_pdf is not None and st.session_state.get("_resume_filename") != uploaded_pdf.name:
+        try:
+            import io
+            from pypdf import PdfReader
+            reader = PdfReader(io.BytesIO(uploaded_pdf.read()))
+            raw_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+            resume_text = raw_text[:3000].strip()
+            st.session_state["_resume_text"] = resume_text
+            st.session_state["_resume_filename"] = uploaded_pdf.name
+        except Exception:
+            st.session_state["_resume_text"] = None
+            st.session_state["_resume_filename"] = uploaded_pdf.name
+
+    if st.session_state.get("_resume_text"):
+        st.caption("Resume loaded — questions will be personalized")
+    elif uploaded_pdf is not None and not st.session_state.get("_resume_text"):
+        st.caption("Could not read PDF — proceeding without resume context")
+
+    # Sync resume text into interview state
+    state = _get_state()
+    resume_text_in_state = state.candidate_profile.resume_text
+    resume_text_in_session = st.session_state.get("_resume_text")
+    if resume_text_in_state != resume_text_in_session:
+        state.candidate_profile.resume_text = resume_text_in_session
+        _save_state(state)
 
     st.divider()
 
