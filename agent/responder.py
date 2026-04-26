@@ -106,8 +106,15 @@ class Responder:
 
         topic_to_probe = decision.get("topic_to_probe")
         follow_up_note = ""
-        if action == "follow_up" and topic_to_probe:
-            follow_up_note = f'\nSpecifically probe this point from their answer: "{topic_to_probe}"'
+        if topic_to_probe:
+            if action == "follow_up":
+                follow_up_note = f'\nSpecifically probe this point from their answer: "{topic_to_probe}"'
+            elif action in ("ask_main_question", "calibrate"):
+                follow_up_note = (
+                    f'\nPersonalize your question to reference this specific topic from the candidate\'s '
+                    f'background: "{topic_to_probe}". Open naturally, e.g. "I see you worked on X — walk me '
+                    f'through..." or "Your background mentions Y — how did you approach..."'
+                )
 
         difficulty = state.current_difficulty
         diff_note = f"Current difficulty level: {difficulty}."
@@ -116,6 +123,13 @@ class Responder:
         if state.summary_note:
             summary_section = f"=== EARLIER CONVERSATION SUMMARY ===\n{state.summary_note}"
 
+        resume_section = ""
+        if state.candidate_profile.resume_text:
+            resume_section = (
+                "=== CANDIDATE RESUME (reference when topic_to_probe points to resume content) ===\n"
+                + state.candidate_profile.resume_text[:1500]
+            )
+
         parts = [
             self._base_system,
             "",
@@ -123,6 +137,7 @@ class Responder:
             role_prompt,
             "",
             summary_section,
+            resume_section,
             "=== PLANNER INSTRUCTIONS FOR THIS TURN ===",
             f"Action: {action_note}",
             follow_up_note,
