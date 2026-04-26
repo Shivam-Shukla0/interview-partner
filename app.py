@@ -140,7 +140,54 @@ with st.sidebar:
         st.rerun()
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# ── Mode toggle ───────────────────────────────────────────────────────────────
+_MODES = ["Practice Mode", "Real Simulation"]
+if "_active_mode" not in st.session_state:
+    st.session_state["_active_mode"] = "Practice Mode"
+if "interview_mode" not in st.session_state:
+    st.session_state["interview_mode"] = "Practice Mode"
+
+_selected_mode = st.radio(
+    "Interview Mode",
+    options=_MODES,
+    horizontal=True,
+    key="interview_mode",
+    help="Practice Mode: chat-based, casual. Real Simulation: voice-only, camera, fullscreen, proctored.",
+)
+
+_active_mode = st.session_state.get("_active_mode", "Practice Mode")
+
+if _selected_mode != _active_mode:
+    _switch_state = _get_state()
+    _mid_interview = _switch_state.phase in {
+        InterviewPhase.CALIBRATION,
+        InterviewPhase.INTERVIEWING,
+        InterviewPhase.WRAPPING_UP,
+    }
+    if _mid_interview:
+        st.warning("Switching modes will end the current interview. Continue?")
+        _sc1, _sc2, _ = st.columns([1.6, 1, 8])
+        with _sc1:
+            if st.button("Yes, switch", type="primary", key="_mode_yes"):
+                st.session_state["_active_mode"] = _selected_mode
+                _reset()
+                st.rerun()
+        with _sc2:
+            if st.button("Cancel", key="_mode_no"):
+                st.session_state["interview_mode"] = _active_mode
+                st.rerun()
+    else:
+        st.session_state["_active_mode"] = _selected_mode
+        _reset()
+        st.rerun()
+
+_mode = st.session_state.get("_active_mode", "Practice Mode")
+
+if _mode == "Real Simulation":
+    st.info("Real Simulation Mode — full implementation coming in Step 5.2.")
+    st.stop()
+
+# ── Practice Mode ─────────────────────────────────────────────────────────────
 st.markdown(
     '<div class="app-header">'
     '<div class="app-header-title">Interview Practice Partner</div>'

@@ -210,6 +210,57 @@ header[data-testid="stHeader"] { background: transparent; }
 }
 .next-step-arrow { font-size: 14px; flex-shrink: 0; margin-top: 1px; font-weight: 700; }
 
+/* ── Mode toggle (segment control look) ───────────────────────────────────── */
+div[data-testid="stRadio"] {
+    margin-bottom: 1.1rem;
+}
+/* Outer label "Interview Mode" → small caps */
+div[data-testid="stRadio"] > div > label {
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: #9CA3AF !important;
+    margin-bottom: 6px;
+}
+/* Options row → pill container */
+div[data-testid="stRadio"] [role="radiogroup"] {
+    background: #F3F4F6;
+    border-radius: 12px;
+    padding: 4px;
+    gap: 2px;
+    border: 1px solid #E5E7EB;
+}
+/* Each option label */
+div[data-testid="stRadio"] [role="radiogroup"] > label {
+    border-radius: 9px;
+    padding: 9px 24px !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+    min-width: 140px;
+    text-align: center;
+    justify-content: center;
+    color: #6B7280;
+}
+/* Hide native radio circle */
+div[data-testid="stRadio"] [role="radio"] {
+    display: none !important;
+}
+/* Practice Mode selected → indigo */
+div[data-testid="stRadio"] [role="radiogroup"] > label:nth-child(1):has([aria-checked="true"]) {
+    background: #4F46E5;
+    color: #fff !important;
+    box-shadow: 0 1px 5px rgba(79, 70, 229, 0.35);
+}
+/* Real Simulation selected → red */
+div[data-testid="stRadio"] [role="radiogroup"] > label:nth-child(2):has([aria-checked="true"]) {
+    background: #EF4444;
+    color: #fff !important;
+    box-shadow: 0 1px 5px rgba(239, 68, 68, 0.35);
+}
+
 /* ── Overall impression box override ──────────────────────────────────────── */
 .overall-box {
     background: #EEF2FF;
