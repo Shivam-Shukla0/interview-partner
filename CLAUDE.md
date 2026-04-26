@@ -1044,4 +1044,36 @@ Before submission (morning of 27 April):
 
 ---
 
-*Version 2.0 — 24 April 2026. Built for autonomous Claude Code execution with human checkpoints.*
+## 17. PHASE 4 PROCTORING SPEC
+
+### Original Real Simulation Mode v1 — DEFERRED
+
+The original Phase 4 spec (camera, waveform, fullscreen enforcement, face detection) was assessed as too risky to implement on the submission timeline. The features listed below were scoped to avoid any camera permissions, fullscreen mode, or face/multi-person detection.
+
+### Actually-implemented: Lite Proctoring (focus-shift detection)
+
+| Feature | Status |
+|---|---|
+| Tab-switch detection (visibilitychange event) | ✅ Implemented |
+| Window-blur detection (blur/focus events) | ✅ Implemented |
+| Focus shift counter shown during interview | ✅ Implemented |
+| Proctoring summary in feedback report | ✅ Implemented |
+| Camera / video capture | ❌ Deferred |
+| Fullscreen enforcement | ❌ Deferred |
+| Face detection / multi-person detection | ❌ Deferred |
+| Waveform animation | ❌ Deferred |
+
+### Implementation details
+
+- Custom Streamlit component at `ui/proctoring_component/index.html`
+- Listens to `document.visibilitychange`, `window.blur`, `window.focus` inside component iframe
+- `visibilitychange` fires when parent tab becomes hidden (tab switch)
+- `window.blur` fires when browser window loses focus (app switch) — deduped with `lastHidden` flag
+- Component value flows back to Python via `Streamlit.setComponentValue(count)`
+- Shifts only counted during CALIBRATION and INTERVIEWING phases
+- Counter displayed as fixed badge top-right when shift count > 0
+- Feedback report includes "Proctoring Summary" section with pass/warning message
+
+---
+
+*Version 2.1 — 26 April 2026. Phase 4 polish complete.*

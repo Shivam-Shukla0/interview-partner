@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>html, body { margin: 0; padding: 0; overflow: hidden; }</style>
+</head>
+<body>
+<script src="https://unpkg.com/streamlit-component-lib/dist/streamlit-component-lib.js"></script>
+<script>
+  var shifts = 0;
+  var lastHidden = false;
+  var initialized = false;
+
+  Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, function() {
+    Streamlit.setFrameHeight(0);
+    if (!initialized) {
+      initialized = true;
+      Streamlit.setComponentValue(shifts);
+    }
+  });
+
+  Streamlit.setComponentReady();
+
+  document.addEventListener("visibilitychange", function() {
+    if (document.hidden && !lastHidden) {
+      lastHidden = true;
+      shifts += 1;
+      Streamlit.setComponentValue(shifts);
+    } else if (!document.hidden) {
+      lastHidden = false;
+    }
+  });
+
+  window.addEventListener("blur", function() {
+    if (!lastHidden) {
+      lastHidden = true;
+      shifts += 1;
+      Streamlit.setComponentValue(shifts);
+    }
+  });
+
+  window.addEventListener("focus", function() {
+    lastHidden = false;
+  });
+</script>
+</body>
+</html>
