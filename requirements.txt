@@ -5,3 +5,4 @@ streamlit-mic-recorder>=0.0.8
 pydantic>=2.0.0
 pytest>=8.0.0
 edge-tts>=6.1.0
+pypdf>=3.0.0
