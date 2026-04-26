@@ -113,18 +113,27 @@ st.markdown(
 state = _get_state()
 agent = _get_agent()
 
-render_chat(state.messages)
-
-# ── Voice output — inline right below the last bot message ────────────────────
+# ── Prepare inline audio before render so it appears below the right message ──
+inline_audio = None
 if voice_enabled and not voice_muted:
-    bot_msgs = [m for m in state.messages if m["role"] == "assistant"]
-    if bot_msgs:
+    bot_msg_indices = [i for i, m in enumerate(state.messages) if m["role"] == "assistant"]
+    if bot_msg_indices:
         from ui.voice_component import text_to_speech_audio
-        audio_key = f"audio_{len(state.messages)}"
+        last_bot_idx = bot_msg_indices[-1]
+        audio_key = f"audio_{last_bot_idx}"
+        autoplay = audio_key not in st.session_state
         if audio_key not in st.session_state:
             with st.spinner("Generating voice…"):
-                st.session_state[audio_key] = text_to_speech_audio(bot_msgs[-1]["content"])
-            st.audio(st.session_state[audio_key], format="audio/mp3", autoplay=True)
+                st.session_state[audio_key] = text_to_speech_audio(
+                    state.messages[last_bot_idx]["content"]
+                )
+        inline_audio = {
+            "msg_idx": last_bot_idx,
+            "bytes": st.session_state[audio_key],
+            "autoplay": autoplay,
+        }
+
+render_chat(state.messages, inline_audio=inline_audio)
 
 # ── Feedback report ───────────────────────────────────────────────────────────
 if state.phase == InterviewPhase.FEEDBACK and state.feedback_result:
