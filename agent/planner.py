@@ -48,7 +48,12 @@ PLANNER_TOOL = {
             },
             "topic_to_probe": {
                 "type": ["string", "null"],
-                "description": "If next_action is 'follow_up', specific point to probe",
+                "description": (
+                    "For 'follow_up': specific point to probe from the candidate's last answer. "
+                    "For 'ask_main_question' or 'calibrate' when resume context is present: "
+                    "a specific project, skill, or experience from the resume (quote it directly). "
+                    "MUST be non-null whenever resume context is provided."
+                ),
             },
             "should_wrap_up": {"type": "boolean"},
             "edge_case_type": {
@@ -93,8 +98,6 @@ class Planner:
 
     def decide(self, state: InterviewState, user_message: str) -> dict:
         """Analyze current state + user message and return a structured decision."""
-        resume_len = len(state.candidate_profile.resume_text) if state.candidate_profile.resume_text else 0
-        print(f"[planner] resume_text length: {resume_len}", flush=True)
         context = self._build_context(state, user_message)
         messages = [{"role": "user", "content": context}]
 

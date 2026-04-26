@@ -55,8 +55,8 @@ _EDGE_CASE_TYPE_INSTRUCTIONS = {
 _ACTION_INSTRUCTIONS = {
     "greet": "Greet the candidate warmly and set expectations for the interview session.",
     "elicit_role": "Ask the candidate which role they want to practice for.",
-    "calibrate": "Ask a soft calibration question to gauge the candidate's level and background.",
-    "ask_main_question": "Ask the next main interview question appropriate to the role and current difficulty.",
+    "calibrate": "Ask a soft calibration question to gauge the candidate's level and background. If resume context is provided and topic_to_probe names a specific item, open with that item directly.",
+    "ask_main_question": "Ask the next main interview question appropriate to the role and current difficulty. If topic_to_probe names a specific resume item, weave it into the question naturally.",
     "follow_up": "Ask a targeted follow-up question based specifically on what the candidate just said.",
     "redirect": "Acknowledge the candidate's last point in one sentence, then redirect them back to the interview topic.",
     "handle_edge_case": "Handle the candidate's message gracefully — stay in character, decline if needed, offer alternatives.",
