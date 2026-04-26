@@ -151,6 +151,14 @@ class Planner:
         if state.summary_note:
             summary_section = f"\nEARLIER CONVERSATION SUMMARY:\n{state.summary_note}\n"
 
+        resume_section = ""
+        if state.candidate_profile.resume_text:
+            truncated = state.candidate_profile.resume_text[:2000]
+            resume_section = (
+                f"\nRESUME CONTEXT (use this to ask personalized questions about projects, "
+                f"skills, and experience the candidate has actually listed):\n{truncated}\n"
+            )
+
         return (
             f"CURRENT PHASE: {phase}\n"
             f"ROLE: {role}\n"
@@ -159,7 +167,8 @@ class Planner:
             f"DETECTED PERSONA SO FAR: {state.candidate_profile.detected_persona or 'unknown'}\n"
             f"RECENT ANSWER QUALITIES: {qualities_str}"
             f"{wrap_hint}"
-            f"{summary_section}\n\n"
+            f"{summary_section}"
+            f"{resume_section}\n"
             f"RECENT CONVERSATION:\n{history}\n\n"
             f"LATEST USER MESSAGE: {user_message}"
         )
