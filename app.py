@@ -21,10 +21,15 @@ st.set_page_config(
 )
 inject_styles()
 
-# Declare proctoring component once at module level
+# Declare custom components once at module level
 _PROCTOR_COMPONENT = _components.declare_component(
     "lite_proctoring",
     path=str(Path(__file__).parent / "ui" / "proctoring_component"),
+)
+
+_SIM_COMPONENT = _components.declare_component(
+    "sim_interview",
+    path=str(Path(__file__).parent / "ui" / "simulation_component"),
 )
 
 _PROCTOR_PHASES = {InterviewPhase.CALIBRATION, InterviewPhase.INTERVIEWING}
@@ -184,7 +189,22 @@ if _selected_mode != _active_mode:
 _mode = st.session_state.get("_active_mode", "Practice Mode")
 
 if _mode == "Real Simulation":
-    st.info("Real Simulation Mode — full implementation coming in Step 5.2.")
+    _sim_data = _SIM_COMPONENT(
+        key="sim_v1",
+        default={"focus_shifts": 0, "fullscreen_exits": 0, "stop_requested": False, "last_event": None},
+    )
+
+    # Persist live tracking data so feedback report can use it
+    if _sim_data:
+        st.session_state["sim_focus_shifts"]     = _sim_data.get("focus_shifts", 0)
+        st.session_state["sim_fullscreen_exits"] = _sim_data.get("fullscreen_exits", 0)
+
+    # Stop requested → return to Practice Mode
+    if _sim_data and _sim_data.get("stop_requested"):
+        st.session_state["_active_mode"]    = "Practice Mode"
+        st.session_state["interview_mode"]  = "Practice Mode"
+        st.rerun()
+
     st.stop()
 
 # ── Practice Mode ─────────────────────────────────────────────────────────────

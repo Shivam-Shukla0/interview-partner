@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Real Simulation Interview</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%;
+      height: 850px;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+      background: #0F0E17;
+    }
+
+    /* ── Top bar ──────────────────────────────────────────────────────────── */
+    #topBar {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 48px;
+      background: rgba(0, 0, 0, 0.72);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 22px;
+      z-index: 50;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+    }
+
+    #topBar .tb-label {
+      color: rgba(255, 255, 255, 0.65);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    #focusCounter {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      background: rgba(255, 255, 255, 0.12);
+      padding: 5px 18px;
+      border-radius: 20px;
+      transition: background 0.25s, color 0.25s;
+      letter-spacing: 0.02em;
+    }
+
+    #focusCounter.alert {
+      background: #EF4444;
+      color: #fff;
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+    }
+
+    #timerDisplay {
+      color: rgba(255, 255, 255, 0.75);
+      font-size: 13px;
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.01em;
+    }
+
+    /* ── Main layout ──────────────────────────────────────────────────────── */
+    #main {
+      display: flex;
+      height: 850px;
+      padding-top: 48px;
+    }
+
+    /* ── Left: webcam column ──────────────────────────────────────────────── */
+    #leftCol {
+      width: 40%;
+      background: #0F0E17;
+      display: flex;
+      flex-direction: column;
+      padding: 18px;
+      gap: 14px;
+      border-right: 1px solid rgba(255, 255, 255, 0.07);
+    }
+
+    #videoWrapper {
+      flex: 1;
+      position: relative;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      background: #1a1a2e;
+      min-height: 0;
+    }
+
+    #webcam {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: none;
+    }
+
+    #camPlaceholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.35);
+      gap: 14px;
+      padding: 24px;
+    }
+
+    #camPlaceholder svg { opacity: 0.5; flex-shrink: 0; }
+
+    #camMsg {
+      font-size: 13px;
+      text-align: center;
+      line-height: 1.55;
+      max-width: 200px;
+    }
+
+    #userLabel {
+      position: absolute;
+      bottom: 12px;
+      left: 12px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+    }
+
+    #stopBtn {
+      flex-shrink: 0;
+      background: #EF4444;
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 13px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    #stopBtn:hover  { background: #DC2626; transform: translateY(-1px); }
+    #stopBtn:active { background: #B91C1C; transform: translateY(0); }
+
+    /* ── Right: AI panel ──────────────────────────────────────────────────── */
+    #rightCol {
+      width: 60%;
+      background: linear-gradient(135deg, #1E1B4B 0%, #312E81 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 36px 32px;
+      gap: 28px;
+    }
+
+    #aiAvatar {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      box-shadow: 0 8px 36px rgba(79, 70, 229, 0.55);
+      flex-shrink: 0;
+    }
+
+    #waveformCanvas {
+      width: 100%;
+      max-width: 560px;
+      height: 200px;
+      border-radius: 14px;
+      background: rgba(0, 0, 0, 0.22);
+      display: block;
+    }
+
+    #statusText {
+      color: #fff;
+      font-size: 26px;
+      font-weight: 700;
+      text-align: center;
+      letter-spacing: 0.01em;
+      min-height: 38px;
+      text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    #speakBtn {
+      background: #4F46E5;
+      color: #fff;
+      border: none;
+      border-radius: 50px;
+      padding: 16px 52px;
+      font-size: 18px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.04em;
+      box-shadow: 0 4px 24px rgba(79, 70, 229, 0.55);
+      transition: background 0.15s, transform 0.12s, box-shadow 0.15s;
+    }
+
+    #speakBtn:hover  {
+      background: #4338CA;
+      transform: translateY(-2px);
+      box-shadow: 0 6px 28px rgba(79, 70, 229, 0.65);
+    }
+    #speakBtn:active { transform: translateY(0); }
+    #speakBtn:disabled {
+      background: rgba(255,255,255,0.2);
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+
+    /* ── Fullscreen entry overlay ─────────────────────────────────────────── */
+    #fsOverlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(5, 4, 20, 0.94);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      gap: 18px;
+      padding: 32px;
+    }
+
+    #fsOverlay h2 {
+      color: #fff;
+      font-size: 26px;
+      font-weight: 800;
+      text-align: center;
+      letter-spacing: -0.02em;
+    }
+
+    #fsOverlay p {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 15px;
+      text-align: center;
+      max-width: 380px;
+      line-height: 1.6;
+    }
+
+    #fsBtn {
+      background: #4F46E5;
+      color: #fff;
+      border: none;
+      border-radius: 14px;
+      padding: 16px 42px;
+      font-size: 17px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 10px;
+      box-shadow: 0 4px 20px rgba(79, 70, 229, 0.5);
+      transition: background 0.15s, transform 0.1s;
+    }
+
+    #fsBtn:hover  { background: #4338CA; transform: translateY(-1px); }
+    #fsBtn:active { transform: translateY(0); }
+
+    /* ── Re-enter fullscreen overlay ─────────────────────────────────────── */
+    #reenterOverlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(5, 4, 20, 0.9);
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      gap: 14px;
+      padding: 32px;
+    }
+
+    #reenterOverlay h2 { color: #fff; font-size: 22px; font-weight: 800; text-align: center; }
+    #reenterOverlay p  { color: rgba(255,255,255,0.6); font-size: 14px; text-align: center; max-width: 320px; line-height: 1.55; }
+
+    #reenterBtn {
+      background: #4F46E5;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 13px 36px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 6px;
+      transition: background 0.15s;
+    }
+
+    #reenterBtn:hover { background: #4338CA; }
+  </style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div id="topBar">
+  <span class="tb-label">Real Simulation Mode</span>
+  <div id="focusCounter">Focus Shifts: 0</div>
+  <div id="timerDisplay">Interview time: 00:00</div>
+</div>
+
+<!-- Main layout -->
+<div id="main">
+
+  <!-- Left: webcam + stop -->
+  <div id="leftCol">
+    <div id="videoWrapper">
+      <video id="webcam" autoplay muted playsinline></video>
+      <div id="camPlaceholder">
+        <svg width="52" height="52" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M17 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"/>
+        </svg>
+        <p id="camMsg">Requesting camera access…</p>
+      </div>
+      <div id="userLabel">You</div>
+    </div>
+    <button id="stopBtn">Stop Interview</button>
+  </div>
+
+  <!-- Right: AI panel -->
+  <div id="rightCol">
+    <div id="aiAvatar">AI</div>
+    <canvas id="waveformCanvas"></canvas>
+    <div id="statusText">Your turn</div>
+    <button id="speakBtn">Speak</button>
+  </div>
+
+</div>
+
+<!-- Fullscreen entry overlay (shown on mount) -->
+<div id="fsOverlay">
+  <h2>Start Full-Screen Interview</h2>
+  <p>For an authentic simulation, this session runs in fullscreen. Your camera and microphone will be used.</p>
+  <button id="fsBtn">Enter Fullscreen &amp; Start</button>
+</div>
+
+<!-- Re-enter fullscreen warning -->
+<div id="reenterOverlay">
+  <h2>Please re-enter fullscreen to continue</h2>
+  <p>This simulation requires fullscreen mode. Click below to resume your interview.</p>
+  <button id="reenterBtn">Resume Fullscreen</button>
+</div>
+
+<script>
+// ── Streamlit component protocol (no CDN, pure postMessage) ────────────────
+(function () {
+  var _listeners = {};
+
+  function _post(type, extra) {
+    window.parent.postMessage(
+      Object.assign({ isStreamlitMessage: true, type: type }, extra || {}),
+      "*"
+    );
+  }
+
+  window.Streamlit = {
+    RENDER_EVENT: "streamlit:render",
+    events: {
+      addEventListener: function (type, fn) {
+        if (!_listeners[type]) _listeners[type] = [];
+        _listeners[type].push(fn);
+      }
+    },
+    setComponentReady:  function ()  { _post("streamlit:componentReady", { apiVersion: 1 }); },
+    setComponentValue:  function (v) { _post("streamlit:setComponentValue", { value: v, dataType: "json" }); },
+    setFrameHeight:     function (h) { _post("streamlit:setFrameHeight", { height: h !== undefined ? h : 0 }); }
+  };
+
+  window.addEventListener("message", function (e) {
+    if (e.data && e.data.type === "streamlit:render") {
+      (_listeners["streamlit:render"] || []).forEach(function (fn) {
+        fn({ detail: e.data });
+      });
+    }
+  });
+})();
+
+// ── Shared state ────────────────────────────────────────────────────────────
+var state = {
+  focusShifts:    0,
+  fullscreenExits: 0,
+  stopRequested:  false,
+  lastEvent:      null
+};
+
+function sendValue() {
+  Streamlit.setComponentValue({
+    focus_shifts:     state.focusShifts,
+    fullscreen_exits: state.fullscreenExits,
+    stop_requested:   state.stopRequested,
+    last_event:       state.lastEvent
+  });
+}
+
+// ── Streamlit lifecycle ─────────────────────────────────────────────────────
+var _initialized = false;
+
+Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, function () {
+  Streamlit.setFrameHeight(850);
+  if (!_initialized) {
+    _initialized = true;
+    sendValue();
+  }
+});
+
+Streamlit.setComponentReady();
+
+// ── Timer ───────────────────────────────────────────────────────────────────
+var _startTime   = Date.now();
+var _timerEl     = document.getElementById('timerDisplay');
+
+function _updateTimer() {
+  var s  = Math.floor((Date.now() - _startTime) / 1000);
+  var mm = String(Math.floor(s / 60)).padStart(2, '0');
+  var ss = String(s % 60).padStart(2, '0');
+  _timerEl.textContent = 'Interview time: ' + mm + ':' + ss;
+}
+setInterval(_updateTimer, 1000);
+
+// ── Focus tracking ──────────────────────────────────────────────────────────
+var _lastHidden       = false;
+var _focusCounterEl   = document.getElementById('focusCounter');
+
+function _updateFocusUI() {
+  _focusCounterEl.textContent = 'Focus Shifts: ' + state.focusShifts;
+  if (state.focusShifts > 0) _focusCounterEl.classList.add('alert');
+}
+
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden && !_lastHidden) {
+    _lastHidden = true;
+    state.focusShifts++;
+    state.lastEvent = 'visibility_hidden';
+    _updateFocusUI();
+    sendValue();
+  } else if (!document.hidden) {
+    _lastHidden = false;
+  }
+});
+
+window.addEventListener('blur', function () {
+  if (!_lastHidden) {
+    _lastHidden = true;
+    state.focusShifts++;
+    state.lastEvent = 'blur';
+    _updateFocusUI();
+    sendValue();
+  }
+});
+
+window.addEventListener('focus', function () { _lastHidden = false; });
+
+// ── Camera ──────────────────────────────────────────────────────────────────
+var _webcamEl  = document.getElementById('webcam');
+var _camHolder = document.getElementById('camPlaceholder');
+var _camMsg    = document.getElementById('camMsg');
+
+function _startCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    _camMsg.textContent = 'Camera not supported in this browser.';
+    return;
+  }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+    .then(function (stream) {
+      _webcamEl.srcObject = stream;
+      _webcamEl.style.display = 'block';
+      _camHolder.style.display = 'none';
+    })
+    .catch(function (err) {
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        _camMsg.textContent = 'Camera access denied. Allow camera permission in browser settings to continue.';
+      } else {
+        _camMsg.textContent = 'Camera unavailable: ' + (err.message || err.name);
+      }
+    });
+}
+
+// ── Fullscreen ──────────────────────────────────────────────────────────────
+var _fsOverlay      = document.getElementById('fsOverlay');
+var _reenterOverlay = document.getElementById('reenterOverlay');
+var _inFullscreen   = false;
+
+function _requestFullscreen() {
+  var el  = document.documentElement;
+  var req = el.requestFullscreen || el.webkitRequestFullscreen ||
+            el.mozRequestFullScreen || el.msRequestFullscreen;
+  if (!req) {
+    // Browser doesn't support fullscreen — proceed anyway
+    _fsOverlay.style.display = 'none';
+    _startCamera();
+    return;
+  }
+  req.call(el)
+    .then(function () {
+      _inFullscreen = true;
+      _fsOverlay.style.display = 'none';
+      _reenterOverlay.style.display = 'none';
+      _startCamera();
+    })
+    .catch(function () {
+      // Fullscreen rejected (e.g. not a user gesture) — degrade gracefully
+      _fsOverlay.style.display = 'none';
+      _startCamera();
+    });
+}
+
+document.getElementById('fsBtn').addEventListener('click', _requestFullscreen);
+document.getElementById('reenterBtn').addEventListener('click', _requestFullscreen);
+
+document.addEventListener('fullscreenchange', function () {
+  var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement ||
+                document.mozFullScreenElement || document.msFullscreenElement);
+  if (_inFullscreen && !isFs) {
+    // User exited fullscreen during interview
+    state.fullscreenExits++;
+    state.lastEvent = 'fullscreen_exit';
+    sendValue();
+    _reenterOverlay.style.display = 'flex';
+  }
+  _inFullscreen = isFs;
+});
+
+// ── Waveform idle animation (Step 5.3 wires live audio) ────────────────────
+var _canvas   = document.getElementById('waveformCanvas');
+var _ctx      = _canvas.getContext('2d');
+var _animId   = null;
+var _wavePhase = 0;
+var BAR_COUNT = 32;
+
+function _resizeCanvas() {
+  _canvas.width  = _canvas.offsetWidth  || 560;
+  _canvas.height = _canvas.offsetHeight || 200;
+}
+
+window.addEventListener('resize', _resizeCanvas);
+_resizeCanvas();
+
+function _drawRoundedBar(x, y, w, h, r) {
+  if (h < 2) { _ctx.fillRect(x, y, w, h); return; }
+  var rad = Math.min(r, h / 2, w / 2);
+  _ctx.beginPath();
+  _ctx.moveTo(x + rad, y);
+  _ctx.lineTo(x + w - rad, y);
+  _ctx.arcTo(x + w, y, x + w, y + rad, rad);
+  _ctx.lineTo(x + w, y + h - rad);
+  _ctx.arcTo(x + w, y + h, x + w - rad, y + h, rad);
+  _ctx.lineTo(x + rad, y + h);
+  _ctx.arcTo(x, y + h, x, y + h - rad, rad);
+  _ctx.lineTo(x, y + rad);
+  _ctx.arcTo(x, y, x + rad, y, rad);
+  _ctx.closePath();
+  _ctx.fill();
+}
+
+function _drawIdleWave() {
+  var w = _canvas.width, h = _canvas.height;
+  _ctx.clearRect(0, 0, w, h);
+
+  var barW  = 10;
+  var total = BAR_COUNT * barW;
+  var gap   = (w - total) / (BAR_COUNT + 1);
+
+  for (var i = 0; i < BAR_COUNT; i++) {
+    var x    = gap + i * (barW + gap);
+    var barH = 8 + 6 * Math.sin(_wavePhase + i * 0.45);
+    var y    = (h - barH) / 2;
+
+    var grad = _ctx.createLinearGradient(0, y, 0, y + barH);
+    grad.addColorStop(0, '#6366F1');
+    grad.addColorStop(1, '#A78BFA');
+    _ctx.fillStyle = grad;
+    _drawRoundedBar(x, y, barW, barH, 3);
+  }
+
+  _wavePhase += 0.04;
+  _animId = requestAnimationFrame(_drawIdleWave);
+}
+
+_drawIdleWave();
+
+// Exposed for Step 5.3: feed live analyser data
+window.SimWaveform = {
+  drawLive: function (dataArray) {
+    if (_animId) { cancelAnimationFrame(_animId); _animId = null; }
+    var w = _canvas.width, h = _canvas.height;
+    _ctx.clearRect(0, 0, w, h);
+    var barW  = 10;
+    var total = BAR_COUNT * barW;
+    var gap   = (w - total) / (BAR_COUNT + 1);
+    var step  = Math.floor(dataArray.length / BAR_COUNT);
+    for (var i = 0; i < BAR_COUNT; i++) {
+      var val  = dataArray[i * step] / 255;
+      var barH = Math.max(4, val * h * 0.85);
+      var x    = gap + i * (barW + gap);
+      var y    = (h - barH) / 2;
+      var grad = _ctx.createLinearGradient(0, y, 0, y + barH);
+      grad.addColorStop(0, '#6366F1');
+      grad.addColorStop(1, '#A78BFA');
+      _ctx.fillStyle = grad;
+      _drawRoundedBar(x, y, barW, barH, 3);
+    }
+  },
+  startIdle: function () {
+    if (!_animId) _drawIdleWave();
+  }
+};
+
+// ── Status text helper (used by Step 5.3 / 5.4) ────────────────────────────
+window.SimStatus = {
+  set: function (text) {
+    document.getElementById('statusText').textContent = text;
+  }
+};
+
+// ── Stop button ─────────────────────────────────────────────────────────────
+document.getElementById('stopBtn').addEventListener('click', function () {
+  // Full confirmation dialog added in Step 5.5
+  if (_animId) cancelAnimationFrame(_animId);
+
+  // Stop webcam tracks
+  if (_webcamEl.srcObject) {
+    _webcamEl.srcObject.getTracks().forEach(function (t) { t.stop(); });
+  }
+
+  // Exit fullscreen
+  var exitFs = document.exitFullscreen || document.webkitExitFullscreen ||
+               document.mozCancelFullScreen || document.msExitFullscreen;
+  if (exitFs && (document.fullscreenElement || document.webkitFullscreenElement)) {
+    exitFs.call(document);
+  }
+
+  state.stopRequested = true;
+  state.lastEvent     = 'stop';
+  sendValue();
+});
+
+// ── Speak button (placeholder — wired in Step 5.4) ────────────────────────
+document.getElementById('speakBtn').addEventListener('click', function () {
+  window.SimStatus.set('Listening…');
+  // Mic recording wired in Step 5.4
+});
+</script>
+</body>
+</html>
