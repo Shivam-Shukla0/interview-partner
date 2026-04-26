@@ -22,6 +22,7 @@ class CandidateProfile:
     inferred_level: Optional[str] = None   # fresher / mid / senior
     detected_persona: Optional[str] = None  # confused / efficient / chatty / edge_case / normal
     role: Optional[str] = None              # sde / data_analyst / sales / retail / marketing
+    resume_text: Optional[str] = None       # extracted text from uploaded PDF (truncated)
 
 
 @dataclass
@@ -53,6 +54,7 @@ class InterviewState:
                 "inferred_level": self.candidate_profile.inferred_level,
                 "detected_persona": self.candidate_profile.detected_persona,
                 "role": self.candidate_profile.role,
+                "resume_text": self.candidate_profile.resume_text,
             },
             "messages": copy.deepcopy(self.messages),
             "qa_history": [
@@ -73,7 +75,13 @@ class InterviewState:
 
     @classmethod
     def from_dict(cls, d: dict) -> "InterviewState":
-        profile = CandidateProfile(**d["candidate_profile"])
+        profile_data = d["candidate_profile"]
+        profile = CandidateProfile(
+            inferred_level=profile_data.get("inferred_level"),
+            detected_persona=profile_data.get("detected_persona"),
+            role=profile_data.get("role"),
+            resume_text=profile_data.get("resume_text"),
+        )
         qa_history = [QAPair(**qa) for qa in d["qa_history"]]
         state = cls(
             phase=InterviewPhase(d["phase"]),
