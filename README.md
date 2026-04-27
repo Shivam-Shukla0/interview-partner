@@ -140,5 +140,3 @@ This separation is what makes the agent genuinely adaptive instead of a glorifie
 
 ---
 
-## License
-MIT
