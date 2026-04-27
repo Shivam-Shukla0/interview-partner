@@ -6,7 +6,7 @@ An agentic AI that conducts mock job interviews across 5 roles, adapts to candid
 
 **Demo video**: [LINK]
 
-**Live demo** (optional): [STREAMLIT CLOUD LINK]
+**Live demo**: https://interview-partner-0.streamlit.app/
 
 ---
 
