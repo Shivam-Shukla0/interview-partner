@@ -1,5 +1,7 @@
 """Streamlit entry point for Interview Practice Partner."""
+import base64 as _b64
 import logging
+import time as _time
 from pathlib import Path
 
 import streamlit as st
@@ -34,6 +36,9 @@ _SIM_COMPONENT = _components.declare_component(
 
 _PROCTOR_PHASES = {InterviewPhase.CALIBRATION, InterviewPhase.INTERVIEWING}
 
+# Read active mode early so sidebar can adapt
+_mode_early = st.session_state.get("_active_mode", "Practice Mode")
+
 
 def _get_agent() -> InterviewAgent:
     if "agent" not in st.session_state:
@@ -54,8 +59,16 @@ def _save_state(state: InterviewState) -> None:
 
 
 def _reset() -> None:
+    _sim_keys = [
+        "_sim_audio_b64", "_sim_audio_seq", "_sim_last_speak_seq",
+        "_sim_start_time", "_sim_was_simulation", "_sim_duration_secs",
+        "sim_focus_shifts", "sim_fullscreen_exits",
+    ]
     audio_keys = [k for k in st.session_state if isinstance(k, str) and k.startswith("audio_")]
-    for key in ["state_dict", "_last_voice_input", "focus_shifts", "_resume_text", "_resume_filename"] + audio_keys:
+    for key in [
+        "state_dict", "_last_voice_input", "focus_shifts",
+        "_resume_text", "_resume_filename",
+    ] + _sim_keys + audio_keys:
         st.session_state.pop(key, None)
 
 
@@ -133,10 +146,16 @@ with st.sidebar:
 
     st.markdown('<p class="sidebar-section-label">Settings</p>', unsafe_allow_html=True)
     show_reasoning = st.toggle("Show bot reasoning", value=False)
-    voice_enabled = st.toggle("Voice mode", value=False)
-    voice_muted = False
-    if voice_enabled:
-        voice_muted = st.toggle("Mute voice output", value=False)
+
+    if _mode_early == "Real Simulation":
+        # In sim mode voice is always on; only expose mute control
+        voice_enabled = True
+        voice_muted = st.toggle("Mute simulation voice", value=False, key="_sim_muted_toggle")
+    else:
+        voice_enabled = st.toggle("Voice mode", value=False)
+        voice_muted = False
+        if voice_enabled:
+            voice_muted = st.toggle("Mute voice output", value=False)
 
     st.divider()
 
@@ -188,22 +207,106 @@ if _selected_mode != _active_mode:
 
 _mode = st.session_state.get("_active_mode", "Practice Mode")
 
+# ── Real Simulation Mode ──────────────────────────────────────────────────────
 if _mode == "Real Simulation":
+    # Track when this simulation session started
+    if "_sim_start_time" not in st.session_state:
+        st.session_state["_sim_start_time"] = _time.time()
+
+    state = _get_state()
+
+    # If the interview naturally reached FEEDBACK, switch to Practice Mode to display it
+    if state.phase == InterviewPhase.FEEDBACK and state.feedback_result:
+        _dur = int(_time.time() - st.session_state.get("_sim_start_time", _time.time()))
+        st.session_state["_sim_was_simulation"] = True
+        st.session_state["_sim_duration_secs"] = _dur
+        st.session_state["_active_mode"] = "Practice Mode"
+        st.session_state["interview_mode"] = "Practice Mode"
+        st.rerun()
+
+    # Render the simulation component, passing audio args
     _sim_data = _SIM_COMPONENT(
         key="sim_v1",
-        default={"focus_shifts": 0, "fullscreen_exits": 0, "stop_requested": False, "last_event": None},
+        audio_b64=st.session_state.get("_sim_audio_b64"),
+        audio_seq=st.session_state.get("_sim_audio_seq", 0),
+        muted=voice_muted,
+        default={
+            "focus_shifts": 0,
+            "fullscreen_exits": 0,
+            "stop_requested": False,
+            "last_event": None,
+            "transcript": None,
+            "speak_event_seq": 0,
+        },
     )
 
-    # Persist live tracking data so feedback report can use it
     if _sim_data:
+        # Persist live tracking data for feedback report
         st.session_state["sim_focus_shifts"]     = _sim_data.get("focus_shifts", 0)
         st.session_state["sim_fullscreen_exits"] = _sim_data.get("fullscreen_exits", 0)
 
-    # Stop requested → return to Practice Mode
-    if _sim_data and _sim_data.get("stop_requested"):
-        st.session_state["_active_mode"]    = "Practice Mode"
-        st.session_state["interview_mode"]  = "Practice Mode"
-        st.rerun()
+        # ── Stop requested by user (confirmed dialog in JS) ──────────────────
+        if _sim_data.get("stop_requested"):
+            state = _get_state()
+            _dur = int(_time.time() - st.session_state.get("_sim_start_time", _time.time()))
+
+            # Generate feedback if there's Q&A history
+            if state.qa_history and state.phase not in (InterviewPhase.FEEDBACK, InterviewPhase.END):
+                try:
+                    from agent.feedback import FeedbackEngine
+                    from agent.llm_client import LLMClient
+                    _engine = FeedbackEngine(LLMClient())
+                    state.feedback_result = _engine.generate(state)
+                    state.phase = InterviewPhase.FEEDBACK
+                    _save_state(state)
+                except Exception:
+                    pass
+
+            st.session_state["_sim_was_simulation"] = True
+            st.session_state["_sim_duration_secs"]  = _dur
+            st.session_state["_active_mode"]         = "Practice Mode"
+            st.session_state["interview_mode"]       = "Practice Mode"
+            st.rerun()
+
+        # ── New voice transcript from component ──────────────────────────────
+        _transcript   = (_sim_data.get("transcript") or "").strip()
+        _speak_seq    = _sim_data.get("speak_event_seq", 0)
+        _last_speak   = st.session_state.get("_sim_last_speak_seq", -1)
+
+        if _transcript and _speak_seq != _last_speak:
+            st.session_state["_sim_last_speak_seq"] = _speak_seq
+            state = _get_state()
+            agent = _get_agent()
+
+            with st.spinner("Thinking…"):
+                _, updated_state = agent.turn(state, _transcript)
+            _save_state(updated_state)
+
+            # Generate TTS for the latest bot message
+            bot_msgs = [m for m in updated_state.messages if m["role"] == "assistant"]
+            if bot_msgs:
+                bot_text = bot_msgs[-1]["content"]
+                if not voice_muted:
+                    try:
+                        from ui.voice_component import text_to_speech_audio
+                        with st.spinner("Generating voice…"):
+                            _audio_bytes = text_to_speech_audio(bot_text)
+                        st.session_state["_sim_audio_b64"] = _b64.b64encode(_audio_bytes).decode("utf-8")
+                        st.session_state["_sim_audio_seq"] = _speak_seq + 1
+                    except Exception:
+                        st.session_state["_sim_audio_b64"] = None
+                else:
+                    st.session_state["_sim_audio_b64"] = None
+
+            # If interview finished naturally, flip to Practice Mode for feedback display
+            if updated_state.phase == InterviewPhase.FEEDBACK and updated_state.feedback_result:
+                _dur = int(_time.time() - st.session_state.get("_sim_start_time", _time.time()))
+                st.session_state["_sim_was_simulation"] = True
+                st.session_state["_sim_duration_secs"]  = _dur
+                st.session_state["_active_mode"]         = "Practice Mode"
+                st.session_state["interview_mode"]       = "Practice Mode"
+
+            st.rerun()
 
     st.stop()
 
@@ -237,9 +340,9 @@ if focus_shifts > 0 and _proctor_active:
         unsafe_allow_html=True,
     )
 
-# ── Prepare inline audio before render so it appears below the right message ──
+# ── Prepare inline audio before render ────────────────────────────────────────
 inline_audio = None
-if voice_enabled and not voice_muted:
+if voice_enabled and not voice_muted and _mode_early == "Practice Mode":
     bot_msg_indices = [i for i, m in enumerate(state.messages) if m["role"] == "assistant"]
     if bot_msg_indices:
         from ui.voice_component import text_to_speech_audio
@@ -261,12 +364,21 @@ render_chat(state.messages, inline_audio=inline_audio)
 
 # ── Feedback report ───────────────────────────────────────────────────────────
 if state.phase == InterviewPhase.FEEDBACK and state.feedback_result:
+    _sim_was_sim    = bool(st.session_state.get("_sim_was_simulation"))
+    _sim_shifts     = st.session_state.get("sim_focus_shifts", 0)
+    _sim_fs_exits   = st.session_state.get("sim_fullscreen_exits", 0)
+    _sim_dur        = st.session_state.get("_sim_duration_secs", 0)
+
     render_feedback(
         state.feedback_result,
         focus_shifts=focus_shifts,
         qa_history=state.qa_history,
         role=state.candidate_profile.role,
         persona=state.candidate_profile.detected_persona,
+        sim_was_simulation=_sim_was_sim,
+        sim_focus_shifts=_sim_shifts,
+        sim_fullscreen_exits=_sim_fs_exits,
+        sim_duration_secs=_sim_dur,
     )
     if "error" not in state.feedback_result:
         st.divider()
@@ -280,11 +392,11 @@ if show_reasoning and state.planner_logs:
         for log in state.planner_logs[-3:]:
             st.json(log)
 
-# ── Input handling ────────────────────────────────────────────────────────────
+# ── Input handling (Practice Mode only — no chat input in Real Simulation) ────
 _active = state.phase not in (InterviewPhase.FEEDBACK, InterviewPhase.END)
 
 if _active:
-    if voice_enabled:
+    if voice_enabled and _mode_early == "Practice Mode":
         from ui.voice_component import speech_input
         transcript = speech_input()
         if transcript and transcript != st.session_state.get("_last_voice_input"):

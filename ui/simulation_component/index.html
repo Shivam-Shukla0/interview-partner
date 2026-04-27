@@ -307,6 +307,9 @@
 </head>
 <body>
 
+<!-- Hidden audio element for TTS playback -->
+<audio id="sim-tts-audio" style="display:none" preload="auto"></audio>
+
 <!-- Top bar -->
 <div id="topBar">
   <span class="tb-label">Real Simulation Mode</span>
@@ -390,12 +393,14 @@
   });
 })();
 
-// ── Shared state ────────────────────────────────────────────────────────────
+// ── Shared component state ──────────────────────────────────────────────────
 var state = {
   focusShifts:    0,
   fullscreenExits: 0,
   stopRequested:  false,
-  lastEvent:      null
+  lastEvent:      null,
+  transcript:     null,
+  speakEventSeq:  0
 };
 
 function sendValue() {
@@ -403,26 +408,45 @@ function sendValue() {
     focus_shifts:     state.focusShifts,
     fullscreen_exits: state.fullscreenExits,
     stop_requested:   state.stopRequested,
-    last_event:       state.lastEvent
+    last_event:       state.lastEvent,
+    transcript:       state.transcript,
+    speak_event_seq:  state.speakEventSeq
   });
 }
 
 // ── Streamlit lifecycle ─────────────────────────────────────────────────────
-var _initialized = false;
+var _initialized  = false;
+var _lastAudioSeq = -1;
 
-Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, function () {
+Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, function (ev) {
   Streamlit.setFrameHeight(850);
   if (!_initialized) {
     _initialized = true;
     sendValue();
+  }
+
+  // Receive audio args from Python
+  var args    = ev.detail.args || {};
+  var audioB64 = args.audio_b64 || null;
+  var audioSeq = (args.audio_seq !== undefined) ? Number(args.audio_seq) : -1;
+  var muted    = !!(args.muted);
+
+  if (audioB64 && audioSeq !== _lastAudioSeq) {
+    _lastAudioSeq = audioSeq;
+    if (!muted) {
+      window.SimPlayAudio(audioB64);
+    } else {
+      _simStatus('Your turn');
+      _speakBtn.disabled = false;
+    }
   }
 });
 
 Streamlit.setComponentReady();
 
 // ── Timer ───────────────────────────────────────────────────────────────────
-var _startTime   = Date.now();
-var _timerEl     = document.getElementById('timerDisplay');
+var _startTime = Date.now();
+var _timerEl   = document.getElementById('timerDisplay');
 
 function _updateTimer() {
   var s  = Math.floor((Date.now() - _startTime) / 1000);
@@ -433,8 +457,8 @@ function _updateTimer() {
 setInterval(_updateTimer, 1000);
 
 // ── Focus tracking ──────────────────────────────────────────────────────────
-var _lastHidden       = false;
-var _focusCounterEl   = document.getElementById('focusCounter');
+var _lastHidden     = false;
+var _focusCounterEl = document.getElementById('focusCounter');
 
 function _updateFocusUI() {
   _focusCounterEl.textContent = 'Focus Shifts: ' + state.focusShifts;
@@ -465,88 +489,85 @@ window.addEventListener('blur', function () {
 
 window.addEventListener('focus', function () { _lastHidden = false; });
 
-// ── Camera ──────────────────────────────────────────────────────────────────
-var _webcamEl  = document.getElementById('webcam');
-var _camHolder = document.getElementById('camPlaceholder');
-var _camMsg    = document.getElementById('camMsg');
+// ── Web Audio API ───────────────────────────────────────────────────────────
+var _audioEl     = document.getElementById('sim-tts-audio');
+var _audioCtx    = null;
+var _analyser    = null;
+var _freqData    = null;
+var _playingAudio = false;
 
-function _startCamera() {
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    _camMsg.textContent = 'Camera not supported in this browser.';
-    return;
+function _initWebAudio() {
+  if (_audioCtx) return;
+  try {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    var source = _audioCtx.createMediaElementSource(_audioEl);
+    _analyser  = _audioCtx.createAnalyser();
+    _analyser.fftSize = 256;
+    _freqData  = new Uint8Array(_analyser.frequencyBinCount);
+    source.connect(_analyser);
+    _analyser.connect(_audioCtx.destination);
+  } catch (e) {
+    _audioCtx = null;
+    _analyser  = null;
+    _freqData  = null;
   }
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
-    .then(function (stream) {
-      _webcamEl.srcObject = stream;
-      _webcamEl.style.display = 'block';
-      _camHolder.style.display = 'none';
-    })
-    .catch(function (err) {
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        _camMsg.textContent = 'Camera access denied. Allow camera permission in browser settings to continue.';
-      } else {
-        _camMsg.textContent = 'Camera unavailable: ' + (err.message || err.name);
-      }
-    });
 }
 
-// ── Fullscreen ──────────────────────────────────────────────────────────────
-var _fsOverlay      = document.getElementById('fsOverlay');
-var _reenterOverlay = document.getElementById('reenterOverlay');
-var _inFullscreen   = false;
-
-function _requestFullscreen() {
-  var el  = document.documentElement;
-  var req = el.requestFullscreen || el.webkitRequestFullscreen ||
-            el.mozRequestFullScreen || el.msRequestFullscreen;
-  if (!req) {
-    // Browser doesn't support fullscreen — proceed anyway
-    _fsOverlay.style.display = 'none';
-    _startCamera();
-    return;
-  }
-  req.call(el)
-    .then(function () {
-      _inFullscreen = true;
-      _fsOverlay.style.display = 'none';
-      _reenterOverlay.style.display = 'none';
-      _startCamera();
-    })
-    .catch(function () {
-      // Fullscreen rejected (e.g. not a user gesture) — degrade gracefully
-      _fsOverlay.style.display = 'none';
-      _startCamera();
-    });
+// ── TTS audio playback ──────────────────────────────────────────────────────
+function _base64ToBytes(b64) {
+  var raw  = atob(b64);
+  var len  = raw.length;
+  var buf  = new Uint8Array(len);
+  for (var i = 0; i < len; i++) buf[i] = raw.charCodeAt(i);
+  return buf;
 }
 
-document.getElementById('fsBtn').addEventListener('click', _requestFullscreen);
-document.getElementById('reenterBtn').addEventListener('click', _requestFullscreen);
+window.SimPlayAudio = function (base64Mp3) {
+  try {
+    var blob = new Blob([_base64ToBytes(base64Mp3)], { type: 'audio/mpeg' });
+    var url  = URL.createObjectURL(blob);
+    _audioEl.src = url;
+    _simStatus('Speaking...');
+    _playingAudio = true;
+    _speakBtn.disabled = true;
 
-document.addEventListener('fullscreenchange', function () {
-  var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement ||
-                document.mozFullScreenElement || document.msFullscreenElement);
-  if (_inFullscreen && !isFs) {
-    // User exited fullscreen during interview
-    state.fullscreenExits++;
-    state.lastEvent = 'fullscreen_exit';
-    sendValue();
-    _reenterOverlay.style.display = 'flex';
+    _audioEl.play().catch(function () {
+      _playingAudio = false;
+      _simStatus('Your turn');
+      _speakBtn.disabled = false;
+      URL.revokeObjectURL(url);
+    });
+
+    _audioEl.onended = function () {
+      _playingAudio = false;
+      _audioEl.src  = '';
+      URL.revokeObjectURL(url);
+      _simStatus('Your turn');
+      _speakBtn.disabled = false;
+    };
+  } catch (e) {
+    _playingAudio = false;
+    _simStatus('Your turn');
+    _speakBtn.disabled = false;
   }
-  _inFullscreen = isFs;
-});
+};
 
-// ── Waveform idle animation (Step 5.3 wires live audio) ────────────────────
+// ── Status text helper ──────────────────────────────────────────────────────
+var _statusEl = document.getElementById('statusText');
+function _simStatus(text) { _statusEl.textContent = text; }
+
+window.SimStatus = { set: _simStatus };
+
+// ── Waveform canvas ─────────────────────────────────────────────────────────
 var _canvas   = document.getElementById('waveformCanvas');
 var _ctx      = _canvas.getContext('2d');
-var _animId   = null;
 var _wavePhase = 0;
-var BAR_COUNT = 32;
+var BAR_COUNT  = 32;
 
 function _resizeCanvas() {
   _canvas.width  = _canvas.offsetWidth  || 560;
   _canvas.height = _canvas.offsetHeight || 200;
 }
-
 window.addEventListener('resize', _resizeCanvas);
 _resizeCanvas();
 
@@ -567,44 +588,20 @@ function _drawRoundedBar(x, y, w, h, r) {
   _ctx.fill();
 }
 
-function _drawIdleWave() {
-  var w = _canvas.width, h = _canvas.height;
+function _animLoop() {
+  var w    = _canvas.width;
+  var h    = _canvas.height;
+  var barW = 10;
+  var gap  = (w - BAR_COUNT * barW) / (BAR_COUNT + 1);
+
   _ctx.clearRect(0, 0, w, h);
 
-  var barW  = 10;
-  var total = BAR_COUNT * barW;
-  var gap   = (w - total) / (BAR_COUNT + 1);
-
-  for (var i = 0; i < BAR_COUNT; i++) {
-    var x    = gap + i * (barW + gap);
-    var barH = 8 + 6 * Math.sin(_wavePhase + i * 0.45);
-    var y    = (h - barH) / 2;
-
-    var grad = _ctx.createLinearGradient(0, y, 0, y + barH);
-    grad.addColorStop(0, '#6366F1');
-    grad.addColorStop(1, '#A78BFA');
-    _ctx.fillStyle = grad;
-    _drawRoundedBar(x, y, barW, barH, 3);
-  }
-
-  _wavePhase += 0.04;
-  _animId = requestAnimationFrame(_drawIdleWave);
-}
-
-_drawIdleWave();
-
-// Exposed for Step 5.3: feed live analyser data
-window.SimWaveform = {
-  drawLive: function (dataArray) {
-    if (_animId) { cancelAnimationFrame(_animId); _animId = null; }
-    var w = _canvas.width, h = _canvas.height;
-    _ctx.clearRect(0, 0, w, h);
-    var barW  = 10;
-    var total = BAR_COUNT * barW;
-    var gap   = (w - total) / (BAR_COUNT + 1);
-    var step  = Math.floor(dataArray.length / BAR_COUNT);
+  // Live frequency data when audio plays, idle sine otherwise
+  if (_playingAudio && _analyser && _freqData) {
+    _analyser.getByteFrequencyData(_freqData);
+    var step = Math.floor(_freqData.length / BAR_COUNT);
     for (var i = 0; i < BAR_COUNT; i++) {
-      var val  = dataArray[i * step] / 255;
+      var val  = _freqData[i * step] / 255;
       var barH = Math.max(4, val * h * 0.85);
       var x    = gap + i * (barW + gap);
       var y    = (h - barH) / 2;
@@ -614,23 +611,221 @@ window.SimWaveform = {
       _ctx.fillStyle = grad;
       _drawRoundedBar(x, y, barW, barH, 3);
     }
-  },
-  startIdle: function () {
-    if (!_animId) _drawIdleWave();
+  } else {
+    _wavePhase += 0.04;
+    for (var j = 0; j < BAR_COUNT; j++) {
+      var bh   = 8 + 6 * Math.sin(_wavePhase + j * 0.45);
+      var bx   = gap + j * (barW + gap);
+      var by   = (h - bh) / 2;
+      var gr   = _ctx.createLinearGradient(0, by, 0, by + bh);
+      gr.addColorStop(0, '#6366F1');
+      gr.addColorStop(1, '#A78BFA');
+      _ctx.fillStyle = gr;
+      _drawRoundedBar(bx, by, barW, bh, 3);
+    }
   }
-};
 
-// ── Status text helper (used by Step 5.3 / 5.4) ────────────────────────────
-window.SimStatus = {
-  set: function (text) {
-    document.getElementById('statusText').textContent = text;
+  requestAnimationFrame(_animLoop);
+}
+
+_animLoop();
+
+// ── Speech Recognition ──────────────────────────────────────────────────────
+var _speakBtn   = document.getElementById('speakBtn');
+var _recognition = null;
+var _recognizing = false;
+
+function _initSpeechRecognition() {
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    _speakBtn.title = 'Voice recognition requires Chrome';
+    return;
   }
-};
+  _recognition = new SR();
+  _recognition.continuous      = false;
+  _recognition.interimResults  = false;
+  _recognition.lang            = 'en-US';
 
-// ── Stop button ─────────────────────────────────────────────────────────────
+  _recognition.onstart = function () {
+    _recognizing = true;
+    _speakBtn.textContent   = 'Stop';
+    _speakBtn.style.background = '#EF4444';
+    _speakBtn.style.boxShadow  = '0 4px 24px rgba(239,68,68,0.55)';
+    _simStatus('Listening...');
+  };
+
+  _recognition.onend = function () {
+    _recognizing = false;
+    _speakBtn.textContent      = 'Speak';
+    _speakBtn.style.background = '';
+    _speakBtn.style.boxShadow  = '';
+    // If no result came back and status is still Listening, reset
+    if (_statusEl.textContent === 'Listening...') {
+      _simStatus('Your turn');
+      _speakBtn.disabled = false;
+    }
+  };
+
+  _recognition.onerror = function (e) {
+    _recognizing = false;
+    _speakBtn.textContent      = 'Speak';
+    _speakBtn.style.background = '';
+    _speakBtn.style.boxShadow  = '';
+    _speakBtn.disabled = false;
+    if (e.error === 'no-speech') {
+      _simStatus('No speech detected. Try again.');
+    } else if (e.error === 'not-allowed') {
+      _simStatus('Microphone access denied. Check browser settings.');
+    } else {
+      _simStatus('Error: ' + e.error + '. Try again.');
+    }
+  };
+
+  _recognition.onresult = function (e) {
+    var transcript = '';
+    for (var i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) transcript += e.results[i][0].transcript;
+    }
+    transcript = transcript.trim();
+    if (transcript) {
+      state.transcript    = transcript;
+      state.speakEventSeq = (state.speakEventSeq || 0) + 1;
+      _simStatus('Thinking...');
+      _speakBtn.disabled = true;
+      sendValue();
+    }
+  };
+}
+
+_speakBtn.addEventListener('click', function () {
+  if (!_recognition) {
+    _simStatus('Voice requires Chrome. No mic available.');
+    return;
+  }
+  if (_playingAudio) return; // ignore clicks while bot is speaking
+  if (_recognizing) {
+    _recognition.stop();
+  } else {
+    _speakBtn.disabled = false;
+    try {
+      _recognition.start();
+    } catch (e) {
+      _simStatus('Could not start recording. Try again.');
+    }
+  }
+});
+
+// ── Camera ──────────────────────────────────────────────────────────────────
+var _webcamEl  = document.getElementById('webcam');
+var _camHolder = document.getElementById('camPlaceholder');
+var _camMsg    = document.getElementById('camMsg');
+
+function _startCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    _camMsg.textContent = 'Camera not supported in this browser.';
+    return;
+  }
+  // Request video + audio together so mic permission is granted for SpeechRecognition
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true })
+    .then(function (stream) {
+      // Attach only video tracks to the video element (audio would cause echo)
+      var videoStream = new MediaStream(stream.getVideoTracks());
+      _webcamEl.srcObject = videoStream;
+      _webcamEl.style.display = 'block';
+      _camHolder.style.display = 'none';
+      // Audio tracks: stop immediately — SpeechRecognition manages its own mic
+      stream.getAudioTracks().forEach(function (t) { t.stop(); });
+      // Now that mic permission is granted, init speech recognition
+      _initSpeechRecognition();
+    })
+    .catch(function (err) {
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        _camMsg.textContent = 'Camera/mic access denied. Allow permissions in browser settings.';
+      } else {
+        _camMsg.textContent = 'Camera unavailable: ' + (err.message || err.name);
+      }
+      // Still try to init speech recognition (may already have mic permission)
+      _initSpeechRecognition();
+    });
+}
+
+// ── Fullscreen ──────────────────────────────────────────────────────────────
+var _fsOverlay      = document.getElementById('fsOverlay');
+var _reenterOverlay = document.getElementById('reenterOverlay');
+var _inFullscreen   = false;
+var interviewActive = false;
+
+function _requestFullscreen() {
+  var el  = document.documentElement;
+  var req = el.requestFullscreen || el.webkitRequestFullscreen ||
+            el.mozRequestFullScreen || el.msRequestFullscreen;
+  if (!req) {
+    _fsOverlay.style.display = 'none';
+    _startCamera();
+    interviewActive = true;
+    return;
+  }
+  req.call(el)
+    .then(function () {
+      _inFullscreen   = true;
+      _fsOverlay.style.display     = 'none';
+      _reenterOverlay.style.display = 'none';
+      _startCamera();
+      interviewActive = true;
+    })
+    .catch(function () {
+      _fsOverlay.style.display = 'none';
+      _startCamera();
+      interviewActive = true;
+    });
+}
+
+document.getElementById('fsBtn').addEventListener('click', function () {
+  _initWebAudio(); // must init on user gesture
+  _requestFullscreen();
+});
+
+document.getElementById('reenterBtn').addEventListener('click', _requestFullscreen);
+
+document.addEventListener('fullscreenchange', function () {
+  var isFs = !!(document.fullscreenElement || document.webkitFullscreenElement ||
+                document.mozFullScreenElement || document.msFullscreenElement);
+  if (_inFullscreen && !isFs && interviewActive) {
+    state.fullscreenExits++;
+    state.lastEvent = 'fullscreen_exit';
+    sendValue();
+    _reenterOverlay.style.display = 'flex';
+  }
+  _inFullscreen = isFs;
+  if (isFs) _reenterOverlay.style.display = 'none';
+});
+
+// ── Exit warning (fires when parent tab/window is closed) ───────────────────
+window.addEventListener('beforeunload', function (e) {
+  if (interviewActive) {
+    e.preventDefault();
+    e.returnValue = '';
+    return '';
+  }
+});
+
+// ── Stop button (with confirmation) ────────────────────────────────────────
 document.getElementById('stopBtn').addEventListener('click', function () {
-  // Full confirmation dialog added in Step 5.5
-  if (_animId) cancelAnimationFrame(_animId);
+  if (!confirm('Are you sure? This will end the simulation and generate your feedback report.')) return;
+
+  interviewActive = false;
+
+  // Stop recognition if active
+  if (_recognition && _recognizing) {
+    try { _recognition.stop(); } catch (e) { /* ignore */ }
+  }
+
+  // Stop TTS audio
+  if (_audioEl) {
+    _audioEl.pause();
+    _audioEl.src = '';
+  }
+  _playingAudio = false;
 
   // Stop webcam tracks
   if (_webcamEl.srcObject) {
@@ -647,12 +842,6 @@ document.getElementById('stopBtn').addEventListener('click', function () {
   state.stopRequested = true;
   state.lastEvent     = 'stop';
   sendValue();
-});
-
-// ── Speak button (placeholder — wired in Step 5.4) ────────────────────────
-document.getElementById('speakBtn').addEventListener('click', function () {
-  window.SimStatus.set('Listening…');
-  // Mic recording wired in Step 5.4
 });
 </script>
 </body>
