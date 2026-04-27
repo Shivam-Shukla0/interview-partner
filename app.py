@@ -168,8 +168,11 @@ with st.sidebar:
 _MODES = ["Practice Mode", "Real Simulation"]
 if "_active_mode" not in st.session_state:
     st.session_state["_active_mode"] = "Practice Mode"
-if "interview_mode" not in st.session_state:
-    st.session_state["interview_mode"] = "Practice Mode"
+
+# Sync the radio-widget key to the authoritative mode BEFORE the widget renders.
+# This is the only correct way to control a widget's value in Streamlit — setting
+# session_state[key] after the widget raises StreamlitAPIException.
+st.session_state["interview_mode"] = st.session_state.get("_active_mode", "Practice Mode")
 
 _selected_mode = st.radio(
     "Interview Mode",
@@ -198,7 +201,8 @@ if _selected_mode != _active_mode:
                 st.rerun()
         with _sc2:
             if st.button("Cancel", key="_mode_no"):
-                st.session_state["interview_mode"] = _active_mode
+                # Do NOT touch the widget-bound key here; the pre-radio sync on
+                # the next run will restore the radio to reflect _active_mode.
                 st.rerun()
     else:
         st.session_state["_active_mode"] = _selected_mode
@@ -221,7 +225,6 @@ if _mode == "Real Simulation":
         st.session_state["_sim_was_simulation"] = True
         st.session_state["_sim_duration_secs"] = _dur
         st.session_state["_active_mode"] = "Practice Mode"
-        st.session_state["interview_mode"] = "Practice Mode"
         st.rerun()
 
     # Render the simulation component, passing audio args
@@ -265,7 +268,6 @@ if _mode == "Real Simulation":
             st.session_state["_sim_was_simulation"] = True
             st.session_state["_sim_duration_secs"]  = _dur
             st.session_state["_active_mode"]         = "Practice Mode"
-            st.session_state["interview_mode"]       = "Practice Mode"
             st.rerun()
 
         # ── New voice transcript from component ──────────────────────────────
@@ -304,7 +306,6 @@ if _mode == "Real Simulation":
                 st.session_state["_sim_was_simulation"] = True
                 st.session_state["_sim_duration_secs"]  = _dur
                 st.session_state["_active_mode"]         = "Practice Mode"
-                st.session_state["interview_mode"]       = "Practice Mode"
 
             st.rerun()
 
