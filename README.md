@@ -2,8 +2,8 @@
 
 > An agentic AI that conducts mock interviews across 5 roles, adapts to candidate skill and behavior, and produces evidence-grounded feedback.
 
-[Demo video — 3min](LINK)  ·  
-[Live demo](https://interview-partner-0.streamlit.app/)  ·  
+[Demo video — 3min](LINK)
+[Live demo](https://interview-partner-0.streamlit.app/) 
 [Architecture](#architecture)
 
 ---
