@@ -395,9 +395,7 @@ var state = {
   focusShifts:    0,
   fullscreenExits: 0,
   stopRequested:  false,
-  lastEvent:      null,
-  transcript:     null,
-  speakEventSeq:  0
+  lastEvent:      null
 };
 
 function sendValue() {
@@ -405,9 +403,7 @@ function sendValue() {
     focus_shifts:     state.focusShifts,
     fullscreen_exits: state.fullscreenExits,
     stop_requested:   state.stopRequested,
-    last_event:       state.lastEvent,
-    transcript:       state.transcript,
-    speak_event_seq:  state.speakEventSeq
+    last_event:       state.lastEvent
   });
 }
 
@@ -430,6 +426,12 @@ Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, function (ev) {
 
   if (audioB64 && audioSeq !== _lastAudioSeq) {
     _lastAudioSeq = audioSeq;
+    // Reset mic toggle so Speak shows the correct label regardless of whether
+    // the user clicked Stop before the bot responded.
+    _micActive = false;
+    _speakBtn.textContent      = 'Speak';
+    _speakBtn.style.background = '';
+    _speakBtn.style.boxShadow  = '';
     if (!muted) {
       window.SimPlayAudio(audioB64);
     } else {
@@ -639,86 +641,63 @@ function _animLoop() {
 
 _animLoop();
 
-// ── Speak button + SpeechRecognition ────────────────────────────────────────
-var _speakBtn    = document.getElementById('speakBtn');
-var _recognition = null;
-var _recognizing = false;
+// ── Speak button — cross-browser via hidden mic-recorder in parent page ─────
+// Audio capture is handled by the streamlit-mic-recorder component rendered
+// below the simulation component in Streamlit's layout.  Both iframes share
+// the same origin (localhost:8501) so the simulation component can access the
+// mic-recorder iframe's contentDocument and click its button programmatically.
+var _speakBtn  = document.getElementById('speakBtn');
+var _micActive = false;
 
-// Disabled until camera/mic permission granted (see _startCamera)
-_speakBtn.disabled = true;
+_speakBtn.disabled = true;  // enabled in fsBtn click after fullscreen entry
 
-function _initSpeechRecognition() {
-  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) {
-    _simStatus('Voice recognition needs Chrome');
+// Locate the mic-recorder iframe in the parent Streamlit page and return its
+// internal button, or null if not yet mounted.
+function _findMicButton() {
+  try {
+    var frames = window.parent.document.querySelectorAll('iframe');
+    for (var i = 0; i < frames.length; i++) {
+      var frame = frames[i];
+      var src   = frame.src   || '';
+      var title = frame.title || '';
+      if (src.indexOf('streamlit_mic_recorder') !== -1 ||
+          title.indexOf('streamlit_mic_recorder') !== -1) {
+        var doc = frame.contentDocument;
+        if (doc) {
+          var btn = doc.querySelector('button');
+          if (btn) return btn;
+        }
+      }
+    }
+  } catch (e) { /* cross-origin guard — should not fire on localhost */ }
+  return null;
+}
+
+_speakBtn.addEventListener('click', function () {
+  if (_playingAudio) return;  // don't interrupt bot
+
+  var micBtn = _findMicButton();
+  if (!micBtn) {
+    _simStatus('Mic not ready — wait a moment and try again');
+    setTimeout(function () { if (!_playingAudio) _simStatus('Your turn'); }, 2500);
     return;
   }
-  _recognition = new SR();
-  _recognition.continuous     = false;
-  _recognition.interimResults = false;
-  _recognition.lang           = 'en-US';
 
-  _recognition.onstart = function () {
-    _recognizing = true;
+  micBtn.click();   // toggle the hidden mic-recorder (start ↔ stop)
+
+  if (!_micActive) {
+    _micActive = true;
     _speakBtn.textContent      = 'Stop';
     _speakBtn.style.background = '#EF4444';
     _speakBtn.style.boxShadow  = '0 4px 24px rgba(239,68,68,0.55)';
     _simStatus('Listening...');
-  };
-
-  _recognition.onend = function () {
-    _recognizing = false;
-    _speakBtn.textContent      = 'Speak';
-    _speakBtn.style.background = '';
-    _speakBtn.style.boxShadow  = '';
-    // If we got a result, status was already set to Thinking; otherwise reset
-    if (_statusEl.textContent === 'Listening...') {
-      _simStatus('Your turn');
-      _speakBtn.disabled = false;
-    }
-  };
-
-  _recognition.onerror = function (ev) {
-    _recognizing = false;
-    _speakBtn.textContent      = 'Speak';
-    _speakBtn.style.background = '';
-    _speakBtn.style.boxShadow  = '';
-    _speakBtn.disabled = false;
-    var msg = ev.error === 'no-speech'    ? 'No speech detected — try again.'
-            : ev.error === 'not-allowed'  ? 'Mic blocked. Refresh and allow microphone.'
-            : 'Recording error: ' + ev.error;
-    _simStatus(msg);
-    setTimeout(function () { if (!_playingAudio) _simStatus('Your turn'); }, 3000);
-  };
-
-  _recognition.onresult = function (ev) {
-    var transcript = '';
-    for (var i = ev.resultIndex; i < ev.results.length; i++) {
-      if (ev.results[i].isFinal) transcript += ev.results[i][0].transcript;
-    }
-    transcript = transcript.trim();
-    if (transcript) {
-      state.transcript    = transcript;
-      state.speakEventSeq = (state.speakEventSeq || 0) + 1;
-      _simStatus('Thinking...');
-      _speakBtn.disabled = true;
-      sendValue();
-    }
-  };
-}
-
-_speakBtn.addEventListener('click', function () {
-  if (_playingAudio) return;       // ignore clicks while bot is speaking
-  if (!_recognition) {
-    _simStatus('Voice recognition needs Chrome');
-    return;
-  }
-  if (_recognizing) {
-    _recognition.stop();
   } else {
-    try { _recognition.start(); } catch (e) {
-      _simStatus('Could not start recording — try again.');
-    }
+    _micActive = false;
+    _speakBtn.textContent      = 'Speak';
+    _speakBtn.style.background = '';
+    _speakBtn.style.boxShadow  = '';
+    _simStatus('Thinking...');
+    _speakBtn.disabled = true;  // re-enabled when bot audio arrives (SimPlayAudio onended)
   }
 });
 
@@ -729,37 +708,25 @@ var _camMsg        = document.getElementById('camMsg');
 var _cameraStarted = false;
 
 function _startCamera() {
-  if (_cameraStarted) return;   // guard against double-init on Resume Fullscreen
+  if (_cameraStarted) return;  // guard: Resume Fullscreen must not double-init
   _cameraStarted = true;
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     _camMsg.textContent = 'Camera not supported in this browser.';
-    _initSpeechRecognition();
-    _speakBtn.disabled = false;
     return;
   }
-
-  // Request both video AND audio so mic permission is granted for SpeechRecognition.
-  // Audio tracks are stopped immediately after permission is obtained — SR manages its own mic.
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true })
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
     .then(function (stream) {
-      var videoStream = new MediaStream(stream.getVideoTracks());
-      _webcamEl.srcObject = videoStream;
+      _webcamEl.srcObject = stream;
       _webcamEl.style.display = 'block';
       _camHolder.style.display = 'none';
-      stream.getAudioTracks().forEach(function (t) { t.stop(); });
-      _initSpeechRecognition();
-      _speakBtn.disabled = false;
     })
     .catch(function (err) {
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        _camMsg.textContent = 'Camera/mic access denied. Allow permissions and refresh.';
+        _camMsg.textContent = 'Camera access denied. Allow camera permission and refresh.';
       } else {
         _camMsg.textContent = 'Camera unavailable: ' + (err.message || err.name);
       }
-      // Still try SR — mic may already have permission from a previous session
-      _initSpeechRecognition();
-      _speakBtn.disabled = false;
     });
 }
 
@@ -797,6 +764,7 @@ function _requestFullscreen() {
 document.getElementById('fsBtn').addEventListener('click', function () {
   _initWebAudio(); // must init on user gesture
   _requestFullscreen();
+  _speakBtn.disabled = false;  // allow user to speak after entering simulation
   // Drain any audio that arrived before the user clicked (e.g. the greeting)
   if (_pendingAudio) {
     var toPlay = _pendingAudio;
@@ -835,10 +803,11 @@ document.getElementById('stopBtn').addEventListener('click', function () {
 
   interviewActive = false;
 
-  // Stop speech recognition if mid-sentence
-  if (_recognition && _recognizing) {
-    try { _recognition.stop(); } catch (e) { /* ignore */ }
-  }
+  // Reset mic-toggle state
+  _micActive = false;
+  _speakBtn.textContent      = 'Speak';
+  _speakBtn.style.background = '';
+  _speakBtn.style.boxShadow  = '';
 
   // Stop any playing audio
   if (_currentSrc) {
