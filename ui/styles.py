@@ -261,6 +261,27 @@ div[data-testid="stRadio"] [role="radiogroup"] > label:nth-child(2):has([aria-ch
     box-shadow: 0 1px 5px rgba(239, 68, 68, 0.35);
 }
 
+/* ── Simulation mic-recorder button — dark-theme pill to match AI panel ───── */
+/* Targets the outer div that streamlit-mic-recorder renders */
+div[data-testid="stMarkdownContainer"] + div .stButton button,
+.sim-mic-wrap .stButton button {
+    width: 100%;
+    background: #4F46E5 !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 50px !important;
+    padding: 14px 40px !important;
+    font-size: 17px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.04em;
+    box-shadow: 0 4px 20px rgba(79, 70, 229, 0.5) !important;
+    transition: background 0.15s, transform 0.12s !important;
+}
+.sim-mic-wrap .stButton button:hover {
+    background: #4338CA !important;
+    transform: translateY(-1px) !important;
+}
+
 /* ── Overall impression box override ──────────────────────────────────────── */
 .overall-box {
     background: #EEF2FF;

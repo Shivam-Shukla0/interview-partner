@@ -398,9 +398,7 @@ var state = {
   focusShifts:    0,
   fullscreenExits: 0,
   stopRequested:  false,
-  lastEvent:      null,
-  transcript:     null,
-  speakEventSeq:  0
+  lastEvent:      null
 };
 
 function sendValue() {
@@ -408,9 +406,7 @@ function sendValue() {
     focus_shifts:     state.focusShifts,
     fullscreen_exits: state.fullscreenExits,
     stop_requested:   state.stopRequested,
-    last_event:       state.lastEvent,
-    transcript:       state.transcript,
-    speak_event_seq:  state.speakEventSeq
+    last_event:       state.lastEvent
   });
 }
 
@@ -437,7 +433,6 @@ Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, function (ev) {
       window.SimPlayAudio(audioB64);
     } else {
       _simStatus('Your turn');
-      _speakBtn.disabled = false;
     }
   }
 });
@@ -527,14 +522,12 @@ window.SimPlayAudio = function (base64Mp3) {
     var blob = new Blob([_base64ToBytes(base64Mp3)], { type: 'audio/mpeg' });
     var url  = URL.createObjectURL(blob);
     _audioEl.src = url;
-    _simStatus('Speaking...');
+    window.SimStatus && window.SimStatus('Speaking...');
     _playingAudio = true;
-    _speakBtn.disabled = true;
 
     _audioEl.play().catch(function () {
       _playingAudio = false;
-      _simStatus('Your turn');
-      _speakBtn.disabled = false;
+      window.SimStatus && window.SimStatus('Your turn');
       URL.revokeObjectURL(url);
     });
 
@@ -542,13 +535,11 @@ window.SimPlayAudio = function (base64Mp3) {
       _playingAudio = false;
       _audioEl.src  = '';
       URL.revokeObjectURL(url);
-      _simStatus('Your turn');
-      _speakBtn.disabled = false;
+      window.SimStatus && window.SimStatus('Your turn');
     };
   } catch (e) {
     _playingAudio = false;
-    _simStatus('Your turn');
-    _speakBtn.disabled = false;
+    window.SimStatus && window.SimStatus('Your turn');
   }
 };
 
@@ -556,7 +547,8 @@ window.SimPlayAudio = function (base64Mp3) {
 var _statusEl = document.getElementById('statusText');
 function _simStatus(text) { _statusEl.textContent = text; }
 
-window.SimStatus = { set: _simStatus };
+// Exposed as a direct callable: window.SimStatus('text')
+window.SimStatus = _simStatus;
 
 // ── Waveform canvas ─────────────────────────────────────────────────────────
 var _canvas   = document.getElementById('waveformCanvas');
@@ -630,90 +622,13 @@ function _animLoop() {
 
 _animLoop();
 
-// ── Speech Recognition ──────────────────────────────────────────────────────
-var _speakBtn   = document.getElementById('speakBtn');
-var _recognition = null;
-var _recognizing = false;
-
-function _initSpeechRecognition() {
-  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) {
-    _speakBtn.title = 'Voice recognition requires Chrome';
-    return;
-  }
-  _recognition = new SR();
-  _recognition.continuous      = false;
-  _recognition.interimResults  = false;
-  _recognition.lang            = 'en-US';
-
-  _recognition.onstart = function () {
-    _recognizing = true;
-    _speakBtn.textContent   = 'Stop';
-    _speakBtn.style.background = '#EF4444';
-    _speakBtn.style.boxShadow  = '0 4px 24px rgba(239,68,68,0.55)';
-    _simStatus('Listening...');
-  };
-
-  _recognition.onend = function () {
-    _recognizing = false;
-    _speakBtn.textContent      = 'Speak';
-    _speakBtn.style.background = '';
-    _speakBtn.style.boxShadow  = '';
-    // If no result came back and status is still Listening, reset
-    if (_statusEl.textContent === 'Listening...') {
-      _simStatus('Your turn');
-      _speakBtn.disabled = false;
-    }
-  };
-
-  _recognition.onerror = function (e) {
-    _recognizing = false;
-    _speakBtn.textContent      = 'Speak';
-    _speakBtn.style.background = '';
-    _speakBtn.style.boxShadow  = '';
-    _speakBtn.disabled = false;
-    if (e.error === 'no-speech') {
-      _simStatus('No speech detected. Try again.');
-    } else if (e.error === 'not-allowed') {
-      _simStatus('Microphone access denied. Check browser settings.');
-    } else {
-      _simStatus('Error: ' + e.error + '. Try again.');
-    }
-  };
-
-  _recognition.onresult = function (e) {
-    var transcript = '';
-    for (var i = e.resultIndex; i < e.results.length; i++) {
-      if (e.results[i].isFinal) transcript += e.results[i][0].transcript;
-    }
-    transcript = transcript.trim();
-    if (transcript) {
-      state.transcript    = transcript;
-      state.speakEventSeq = (state.speakEventSeq || 0) + 1;
-      _simStatus('Thinking...');
-      _speakBtn.disabled = true;
-      sendValue();
-    }
-  };
-}
-
-_speakBtn.addEventListener('click', function () {
-  if (!_recognition) {
-    _simStatus('Voice requires Chrome. No mic available.');
-    return;
-  }
-  if (_playingAudio) return; // ignore clicks while bot is speaking
-  if (_recognizing) {
-    _recognition.stop();
-  } else {
-    _speakBtn.disabled = false;
-    try {
-      _recognition.start();
-    } catch (e) {
-      _simStatus('Could not start recording. Try again.');
-    }
-  }
-});
+// ── Speak button — decorative indicator (recording handled by mic below) ────
+// The button is always disabled; its label mirrors the status text so users
+// see a large readable cue alongside the waveform.
+var _speakBtn = document.getElementById('speakBtn');
+_speakBtn.disabled = true;
+_speakBtn.style.cursor = 'default';
+_speakBtn.style.pointerEvents = 'none';
 
 // ── Camera ──────────────────────────────────────────────────────────────────
 var _webcamEl  = document.getElementById('webcam');
@@ -725,27 +640,18 @@ function _startCamera() {
     _camMsg.textContent = 'Camera not supported in this browser.';
     return;
   }
-  // Request video + audio together so mic permission is granted for SpeechRecognition
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: true })
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false })
     .then(function (stream) {
-      // Attach only video tracks to the video element (audio would cause echo)
-      var videoStream = new MediaStream(stream.getVideoTracks());
-      _webcamEl.srcObject = videoStream;
+      _webcamEl.srcObject = stream;
       _webcamEl.style.display = 'block';
       _camHolder.style.display = 'none';
-      // Audio tracks: stop immediately — SpeechRecognition manages its own mic
-      stream.getAudioTracks().forEach(function (t) { t.stop(); });
-      // Now that mic permission is granted, init speech recognition
-      _initSpeechRecognition();
     })
     .catch(function (err) {
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        _camMsg.textContent = 'Camera/mic access denied. Allow permissions in browser settings.';
+        _camMsg.textContent = 'Camera access denied. Allow camera permission in browser settings.';
       } else {
         _camMsg.textContent = 'Camera unavailable: ' + (err.message || err.name);
       }
-      // Still try to init speech recognition (may already have mic permission)
-      _initSpeechRecognition();
     });
 }
 
@@ -814,11 +720,6 @@ document.getElementById('stopBtn').addEventListener('click', function () {
   if (!confirm('Are you sure? This will end the simulation and generate your feedback report.')) return;
 
   interviewActive = false;
-
-  // Stop recognition if active
-  if (_recognition && _recognizing) {
-    try { _recognition.stop(); } catch (e) { /* ignore */ }
-  }
 
   // Stop TTS audio
   if (_audioEl) {
