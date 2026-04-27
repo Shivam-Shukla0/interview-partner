@@ -225,12 +225,120 @@
       transform: none;
     }
 
+    /* ── Permission gate overlay ─────────────────────────────────────────── */
+    #permOverlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, #1E1B4B 0%, #312E81 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 300;
+      gap: 0;
+      padding: 32px;
+    }
+
+    #permPending {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+
+    #permPending p {
+      color: rgba(255, 255, 255, 0.65);
+      font-size: 15px;
+      text-align: center;
+    }
+
+    .perm-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(255, 255, 255, 0.15);
+      border-top-color: #A78BFA;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #permDenied {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 20px;
+      padding: 36px 40px;
+      max-width: 420px;
+      text-align: center;
+    }
+
+    #permDenied .perm-icon {
+      font-size: 38px;
+      letter-spacing: 6px;
+      line-height: 1;
+    }
+
+    #permDenied h2 {
+      color: #fff;
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+
+    #permDenied p {
+      color: rgba(255, 255, 255, 0.6);
+      font-size: 14px;
+      line-height: 1.65;
+      margin: 0;
+    }
+
+    #grantBtn {
+      background: #4F46E5;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 14px 36px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      width: 100%;
+      box-shadow: 0 4px 18px rgba(79, 70, 229, 0.5);
+      transition: background 0.15s, transform 0.1s;
+      margin-top: 4px;
+    }
+
+    #grantBtn:hover  { background: #4338CA; transform: translateY(-1px); }
+    #grantBtn:active { transform: translateY(0); }
+
+    #switchModeBtn {
+      background: transparent;
+      color: rgba(255, 255, 255, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 12px;
+      padding: 12px 36px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    #switchModeBtn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: rgba(255, 255, 255, 0.85);
+    }
+
     /* ── Fullscreen entry overlay ─────────────────────────────────────────── */
     #fsOverlay {
       position: absolute;
       inset: 0;
       background: rgba(5, 4, 20, 0.94);
-      display: flex;
+      display: none;           /* hidden until permissions granted */
       flex-direction: column;
       align-items: center;
       justify-content: center;
@@ -342,7 +450,22 @@
 
 </div>
 
-<!-- Fullscreen entry overlay (shown on mount) -->
+<!-- Permission gate (shown first; hides itself once permissions granted) -->
+<div id="permOverlay">
+  <div id="permPending">
+    <div class="perm-spinner"></div>
+    <p>Requesting camera and microphone permissions&hellip;</p>
+  </div>
+  <div id="permDenied">
+    <div class="perm-icon">&#127909;&#127908;</div>
+    <h2>Camera &amp; Microphone Required</h2>
+    <p>Real Simulation Mode requires both camera and microphone access to deliver an authentic interview experience. Please grant both permissions to continue.</p>
+    <button id="grantBtn">Grant Permissions</button>
+    <button id="switchModeBtn">Switch to Practice Mode</button>
+  </div>
+</div>
+
+<!-- Fullscreen entry overlay (shown after permissions granted) -->
 <div id="fsOverlay">
   <h2>Start Full-Screen Interview</h2>
   <p>For an authentic simulation, this session runs in fullscreen. Your camera and microphone will be used.</p>
@@ -442,6 +565,64 @@ Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, function (ev) {
 });
 
 Streamlit.setComponentReady();
+
+// ── Permission gate ─────────────────────────────────────────────────────────
+var _permOverlay  = document.getElementById('permOverlay');
+var _permPending  = document.getElementById('permPending');
+var _permDenied   = document.getElementById('permDenied');
+
+function _showFsOverlay() {
+  _permOverlay.style.display = 'none';
+  document.getElementById('fsOverlay').style.display = 'flex';
+}
+
+function _showPermDenied() {
+  _permPending.style.display  = 'none';
+  _permDenied.style.display   = 'flex';
+}
+
+function _requestPermissions() {
+  // Skip the prompt if already granted in this session
+  if (window.SimPermissionsGranted) { _showFsOverlay(); return; }
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    // Browser has no media API — fall through to fsOverlay gracefully
+    window.SimPermissionsGranted = true;
+    _showFsOverlay();
+    return;
+  }
+
+  navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+    .then(function (stream) {
+      // Stop all tracks immediately — we only needed to confirm permission.
+      // The camera restarts in _startCamera(); audio is via mic-recorder.
+      stream.getTracks().forEach(function (t) { t.stop(); });
+      window.SimPermissionsGranted = true;
+      _showFsOverlay();
+    })
+    .catch(function () {
+      _showPermDenied();
+    });
+}
+
+document.getElementById('grantBtn').addEventListener('click', function () {
+  _permDenied.style.display  = 'none';
+  _permPending.style.display = 'flex';
+  _requestPermissions();
+});
+
+document.getElementById('switchModeBtn').addEventListener('click', function () {
+  // Reuse the stop_requested path — Python detects this and switches mode
+  state.stopRequested = true;
+  state.lastEvent     = 'stop';
+  sendValue();
+});
+
+// Kick off permission check as soon as the component mounts.
+// On localhost browsers typically allow this without an explicit gesture
+// because the page origin already has or will be granted permission.
+// If a gesture is required the catch handler shows the retry card.
+_requestPermissions();
 
 // ── Timer ───────────────────────────────────────────────────────────────────
 var _startTime = Date.now();
