@@ -1044,36 +1044,90 @@ Before submission (morning of 27 April):
 
 ---
 
-## 17. PHASE 4 PROCTORING SPEC
+## 17. PHASE 5 — REAL SIMULATION MODE (IMPLEMENTED)
 
-### Original Real Simulation Mode v1 — DEFERRED
+### Two-mode architecture
 
-The original Phase 4 spec (camera, waveform, fullscreen enforcement, face detection) was assessed as too risky to implement on the submission timeline. The features listed below were scoped to avoid any camera permissions, fullscreen mode, or face/multi-person detection.
+The app offers two interview modes selectable via a radio toggle at the top of the page:
 
-### Actually-implemented: Lite Proctoring (focus-shift detection)
+| Mode | UI | Voice | Camera | Fullscreen | Proctoring |
+|---|---|---|---|---|---|
+| **Practice Mode** | Streamlit chat | Optional (voice toggle + edge-tts) | No | No | Lite (focus-shift) |
+| **Real Simulation** | HTML component (side-by-side) | Always on (Web Speech API STT + edge-tts TTS) | Yes | Yes | Full (focus + fullscreen exits + duration) |
+
+### Practice Mode proctoring (Phase 4, unchanged)
+
+- Custom Streamlit component at `ui/proctoring_component/index.html`
+- Listens to `document.visibilitychange`, `window.blur`, `window.focus`
+- Counter displayed as fixed badge top-right during CALIBRATION and INTERVIEWING
+- Feedback report shows "Proctoring Summary" with pass/warning
+
+### Real Simulation Mode v2 (Phase 5, IMPLEMENTED)
 
 | Feature | Status |
 |---|---|
-| Tab-switch detection (visibilitychange event) | ✅ Implemented |
-| Window-blur detection (blur/focus events) | ✅ Implemented |
-| Focus shift counter shown during interview | ✅ Implemented |
-| Proctoring summary in feedback report | ✅ Implemented |
-| Camera / video capture | ❌ Deferred |
-| Fullscreen enforcement | ❌ Deferred |
-| Face detection / multi-person detection | ❌ Deferred |
-| Waveform animation | ❌ Deferred |
+| Camera (webcam video, user-facing) | ✅ Implemented |
+| Fullscreen enforcement with re-enter overlay | ✅ Implemented |
+| Side-by-side layout (40% cam / 60% AI panel) | ✅ Implemented |
+| Voice-only interaction (SpeechRecognition STT) | ✅ Implemented |
+| Real-time waveform animation (Web Audio analyser) | ✅ Implemented |
+| Idle sine waveform when bot is not speaking | ✅ Implemented |
+| Focus-shift counter in top bar | ✅ Implemented |
+| Interview timer in top bar | ✅ Implemented |
+| Exit warning (beforeunload) during active interview | ✅ Implemented |
+| Stop Interview confirmation dialog | ✅ Implemented |
+| Feedback report with Simulation Summary section | ✅ Implemented |
+| Transcript export includes sim summary | ✅ Implemented |
+| Face detection / multi-person detection | ❌ Out of scope |
 
-### Implementation details
+### Simulation component architecture
 
-- Custom Streamlit component at `ui/proctoring_component/index.html`
-- Listens to `document.visibilitychange`, `window.blur`, `window.focus` inside component iframe
-- `visibilitychange` fires when parent tab becomes hidden (tab switch)
-- `window.blur` fires when browser window loses focus (app switch) — deduped with `lastHidden` flag
-- Component value flows back to Python via `Streamlit.setComponentValue(count)`
-- Shifts only counted during CALIBRATION and INTERVIEWING phases
-- Counter displayed as fixed badge top-right when shift count > 0
-- Feedback report includes "Proctoring Summary" section with pass/warning message
+- `ui/simulation_component/index.html` — self-contained HTML/CSS/JS component
+- Mounted via `streamlit.components.v1.declare_component` at module level
+- Python ↔ JS communication via Streamlit's postMessage protocol:
+  - **Python → JS**: `audio_b64` (base64 MP3), `audio_seq` (monotonic int), `muted` (bool) passed as kwargs on each render
+  - **JS → Python**: `{focus_shifts, fullscreen_exits, stop_requested, transcript, speak_event_seq}` via `setComponentValue`
+- When `speak_event_seq` increases: Python calls `agent.turn(transcript)`, generates TTS, stores base64 in session_state, `st.rerun()` sends it to component
+- `audio_seq` prevents replay: component tracks `_lastAudioSeq` and skips if unchanged
+
+### Web Audio waveform
+
+- `AudioContext` + `MediaElementSource` initialized on user gesture (Enter Fullscreen click)
+- `AnalyserNode` (fftSize=256) connected between source and destination
+- Single `_animLoop` running at 60fps via `requestAnimationFrame`:
+  - `_playingAudio=true`: calls `getByteFrequencyData()` each frame → bar heights from real frequencies
+  - `_playingAudio=false`: idle sine pulse (8 + 6·sin(phase + i·0.45))
+
+### Voice-only flow (SpeechRecognition)
+
+- Microphone permission requested via `getUserMedia({video, audio})` on fullscreen entry
+- `SpeechRecognition` initialized after permission granted (Chrome only)
+- Speak button toggles recording: click → start, click again → stop
+- On final result: `state.transcript` set, `state.speakEventSeq++`, `setComponentValue()` called → status "Thinking..."
+- Python receives transcript on next rerun, runs agent, returns TTS audio → status transitions to "Speaking..." then "Your turn"
+
+### Simulation Summary in feedback report
+
+When an interview ran in Real Simulation mode, `render_feedback()` renders a dark-themed summary box at the top of the report before the scores, showing:
+- Focus shifts (green ≤ 0, amber 1–5, red > 5)
+- Fullscreen exits
+- Interview duration (MM:SS)
+
+The transcript markdown export includes the same data under `## Simulation Summary`.
+
+### Session state keys (Real Simulation)
+
+| Key | Type | Purpose |
+|---|---|---|
+| `_sim_audio_b64` | str\|None | Latest TTS audio as base64 MP3 |
+| `_sim_audio_seq` | int | Monotonic counter to prevent replay |
+| `_sim_last_speak_seq` | int | Last processed speak_event_seq |
+| `_sim_start_time` | float | `time.time()` when sim session started |
+| `_sim_was_simulation` | bool | True when feedback came from sim mode |
+| `_sim_duration_secs` | int | Elapsed seconds at interview end |
+| `sim_focus_shifts` | int | From component, persisted for feedback |
+| `sim_fullscreen_exits` | int | From component, persisted for feedback |
 
 ---
 
-*Version 2.1 — 26 April 2026. Phase 4 polish complete.*
+*Version 3.0 — 27 April 2026. Phase 5 Real Simulation complete.*

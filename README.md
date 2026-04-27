@@ -28,12 +28,15 @@
 
 ## Key features
 
+- **Two interview modes** — Practice Mode (chat-based) and Real Simulation (voice-only, fullscreen, camera)
+- **Real Simulation Mode** — immersive proctored interview with webcam, fullscreen enforcement, Web Audio waveform that animates with real audio frequencies, and voice-only interaction via browser SpeechRecognition + edge-tts playback
 - 5-role coverage with role-specific question banks and difficulty scaling
 - Adaptive difficulty (easier / same / harder based on answer quality)
 - Genuine follow-ups referencing what the candidate just said
 - Resume-aware question generation (upload PDF for personalized questions)
-- Voice input (browser-native STT) + voice output (edge-tts, Indian-accent female voice)
-- Lite proctoring: focus-shift detection during interviews (tab switches, window blur)
+- Voice input (browser SpeechRecognition / streamlit-mic-recorder) + voice output (edge-tts, Indian-accent female voice)
+- Lite proctoring in Practice Mode: focus-shift detection during interviews (tab switches, window blur)
+- Full simulation summary in feedback: focus shifts, fullscreen exits, duration
 - Transparent reasoning panel (toggle to see planner's JSON each turn)
 - Transcript export as Markdown download
 - Edge case handling: out-of-scope roles, hostile inputs, gibberish
@@ -118,6 +121,12 @@ Open `http://localhost:8501` in Chrome for full voice support.
             Anthropic API
 ```
 
+### Two interview modes
+
+**Practice Mode** — Streamlit chat UI with optional voice. Lite proctoring (focus-shift badge). Full sidebar with reasoning panel toggle.
+
+**Real Simulation** — Self-contained HTML component (`ui/simulation_component/index.html`) mounted as a Streamlit custom component. Side-by-side layout: webcam (left 40%) + AI panel (right 60%). Voice-only: user speaks via browser SpeechRecognition, bot responds via edge-tts with real-time Web Audio waveform animation. Python passes TTS audio as base64 to the component on each rerender; component plays it and drives the waveform from live `AnalyserNode` frequency data.
+
 ### The two-LLM pattern
 
 Every user turn triggers two LLM calls:
@@ -153,7 +162,9 @@ Detection is LLM-based — the planner classifies each turn, no keyword matching
 | Voice input | streamlit-mic-recorder | Browser-native STT, Chrome-compatible, zero cost |
 | State | st.session_state | Session-scoped interview doesn't need a DB |
 | Persona detection | LLM-based | Keyword rules are brittle and evaluators spot them immediately |
-| Proctoring | JS visibilitychange + blur | Lightweight focus detection without camera or fullscreen enforcement |
+| Proctoring (Practice) | JS visibilitychange + blur | Lightweight focus detection without camera or fullscreen enforcement |
+| Real Simulation | HTML component + Web Audio | Full immersion: camera, fullscreen, voice-only, live waveform, exit warning |
+| Sim ↔ Python comms | Streamlit component postMessage | audio_b64/audio_seq args in → transcript/events out, no extra server needed |
 
 ---
 
