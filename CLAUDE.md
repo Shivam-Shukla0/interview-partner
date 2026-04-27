@@ -1085,49 +1085,55 @@ The app offers two interview modes selectable via a radio toggle at the top of t
 - `ui/simulation_component/index.html` — self-contained HTML/CSS/JS component
 - Mounted via `streamlit.components.v1.declare_component` at module level
 - Python ↔ JS communication via Streamlit's postMessage protocol:
-  - **Python → JS**: `audio_b64` (base64 MP3), `audio_seq` (monotonic int), `muted` (bool) passed as kwargs on each render
-  - **JS → Python**: `{focus_shifts, fullscreen_exits, stop_requested, transcript, speak_event_seq}` via `setComponentValue`
-- When `speak_event_seq` increases: Python calls `agent.turn(transcript)`, generates TTS, stores base64 in session_state, `st.rerun()` sends it to component
-- `audio_seq` prevents replay: component tracks `_lastAudioSeq` and skips if unchanged
+  - **Python → JS**: `audio_b64` (base64 MP3), `audio_seq` (monotonic int), `muted` (bool) passed as kwargs on each render event
+  - **JS → Python**: `{focus_shifts, fullscreen_exits, stop_requested, last_event}` via `setComponentValue`
+- `audio_seq` is monotonic and prevents replay: component tracks `_lastAudioSeq` and plays only when the value changes
+- `window.SimStatus = function(text)` — direct callable that updates `#statusText` in the AI panel; called by `SimPlayAudio` at Speaking and Your-turn transitions
+- `window.SimPlayAudio(base64Mp3)` — decodes base64 to Blob URL, plays via `#sim-tts-audio`, sets `_playingAudio` flag used by the animation loop
 
 ### Web Audio waveform
 
-- `AudioContext` + `MediaElementSource` initialized on user gesture (Enter Fullscreen click)
-- `AnalyserNode` (fftSize=256) connected between source and destination
-- Single `_animLoop` running at 60fps via `requestAnimationFrame`:
-  - `_playingAudio=true`: calls `getByteFrequencyData()` each frame → bar heights from real frequencies
-  - `_playingAudio=false`: idle sine pulse (8 + 6·sin(phase + i·0.45))
+- `AudioContext` + `MediaElementSource` + `AnalyserNode` (fftSize=256) initialized on user gesture (Enter Fullscreen & Start click)
+- Single `_animLoop()` at 60fps:
+  - `_playingAudio=true` AND analyser available → `getByteFrequencyData()` per frame → 32 bar heights from real frequencies
+  - Otherwise → idle sine pulse (amplitude 8+6·sin(phase + i·0.45), phase += 0.04 per frame)
+- If Web Audio API unavailable (old browser), `_analyser` stays null and loop falls back to idle sine permanently
 
-### Voice-only flow (SpeechRecognition)
+### Voice-only flow (mic-recorder approach)
 
-- Microphone permission requested via `getUserMedia({video, audio})` on fullscreen entry
-- `SpeechRecognition` initialized after permission granted (Chrome only)
-- Speak button toggles recording: click → start, click again → stop
-- On final result: `state.transcript` set, `state.speakEventSeq++`, `setComponentValue()` called → status "Thinking..."
-- Python receives transcript on next rerun, runs agent, returns TTS audio → status transitions to "Speaking..." then "Your turn"
+- Component's Speak button is decorative (disabled, no click handler)
+- `streamlit_mic_recorder.speech_to_text()` is rendered **below** the simulation component in the Streamlit layout (before `st.stop()`)
+- When user clicks the mic button and speaks → transcript string returned on rerun
+- Python deduplicates via `_sim_last_mic_transcript`; new transcript → `agent.turn()` → TTS → base64 → `_sim_audio_seq++` → `st.rerun()`
+- Next rerun: component receives new `audio_b64` + `audio_seq` → `SimPlayAudio` fires → waveform goes live → status "Speaking..." → status "Your turn" on `onended`
+- Status progression visible to user: Your turn → [mic button active] → Thinking... spinner → Speaking... → Your turn
 
 ### Simulation Summary in feedback report
 
-When an interview ran in Real Simulation mode, `render_feedback()` renders a dark-themed summary box at the top of the report before the scores, showing:
-- Focus shifts (green ≤ 0, amber 1–5, red > 5)
+When `_sim_was_simulation=True`, `render_feedback()` renders a dark-themed summary box (`background:#0F0E17`) at the top of the report before scores, showing:
+- Focus shifts — green (#10B981) if 0, amber (#F59E0B) if 1–5, red (#EF4444) if >5
 - Fullscreen exits
-- Interview duration (MM:SS)
+- Duration (MM:SS formatted from `_sim_duration_secs`)
 
-The transcript markdown export includes the same data under `## Simulation Summary`.
+Transcript markdown export includes the same data under `## Simulation Summary`.
 
 ### Session state keys (Real Simulation)
 
 | Key | Type | Purpose |
 |---|---|---|
-| `_sim_audio_b64` | str\|None | Latest TTS audio as base64 MP3 |
-| `_sim_audio_seq` | int | Monotonic counter to prevent replay |
-| `_sim_last_speak_seq` | int | Last processed speak_event_seq |
+| `_sim_audio_b64` | str\|None | Latest TTS audio as base64 MP3 to send to component |
+| `_sim_audio_seq` | int | Monotonic counter; component plays only when this changes |
+| `_sim_last_mic_transcript` | str | Last transcript processed; prevents duplicate turns |
 | `_sim_start_time` | float | `time.time()` when sim session started |
-| `_sim_was_simulation` | bool | True when feedback came from sim mode |
+| `_sim_was_simulation` | bool | True when feedback came from Real Simulation mode |
 | `_sim_duration_secs` | int | Elapsed seconds at interview end |
-| `sim_focus_shifts` | int | From component, persisted for feedback |
-| `sim_fullscreen_exits` | int | From component, persisted for feedback |
+| `sim_focus_shifts` | int | Persisted from component for feedback report |
+| `sim_fullscreen_exits` | int | Persisted from component for feedback report |
+
+### Known limitation
+
+`st.session_state["interview_mode"]` (the radio-widget key) must never be mutated after the radio widget renders in the same script run — Streamlit raises `StreamlitAPIException`. The pattern used: sync `st.session_state["interview_mode"] = _active_mode` **before** `st.radio()` renders each run; only `_active_mode` is written elsewhere.
 
 ---
 
-*Version 3.0 — 27 April 2026. Phase 5 Real Simulation complete.*
+*Version 3.1 — 27 April 2026. Phase 5 Real Simulation complete; widget-key mutation bug fixed.*

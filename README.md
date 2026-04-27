@@ -29,7 +29,7 @@
 ## Key features
 
 - **Two interview modes** — Practice Mode (chat-based) and Real Simulation (voice-only, fullscreen, camera)
-- **Real Simulation Mode** — immersive proctored interview with webcam, fullscreen enforcement, Web Audio waveform that animates with real audio frequencies, and voice-only interaction via browser SpeechRecognition + edge-tts playback
+- **Real Simulation Mode** — immersive proctored interview with webcam, fullscreen enforcement, real-time Web Audio waveform, and voice-only interaction: `streamlit-mic-recorder` for STT + `edge-tts` for TTS, audio routed through Web Audio AnalyserNode for live waveform visualization
 - 5-role coverage with role-specific question banks and difficulty scaling
 - Adaptive difficulty (easier / same / harder based on answer quality)
 - Genuine follow-ups referencing what the candidate just said
@@ -125,7 +125,7 @@ Open `http://localhost:8501` in Chrome for full voice support.
 
 **Practice Mode** — Streamlit chat UI with optional voice. Lite proctoring (focus-shift badge). Full sidebar with reasoning panel toggle.
 
-**Real Simulation** — Self-contained HTML component (`ui/simulation_component/index.html`) mounted as a Streamlit custom component. Side-by-side layout: webcam (left 40%) + AI panel (right 60%). Voice-only: user speaks via browser SpeechRecognition, bot responds via edge-tts with real-time Web Audio waveform animation. Python passes TTS audio as base64 to the component on each rerender; component plays it and drives the waveform from live `AnalyserNode` frequency data.
+**Real Simulation** — Self-contained HTML component (`ui/simulation_component/index.html`) mounted as a Streamlit custom component. Side-by-side layout: webcam (left 40%) + AI panel (right 60%). Voice-only: user clicks the `streamlit-mic-recorder` button rendered below the component → transcript flows to `agent.turn()` → `edge-tts` generates MP3 → base64-encoded and passed to the component as `audio_b64` kwarg → component plays via `#sim-tts-audio` and drives the waveform from live Web Audio `AnalyserNode` frequency data. Status text (`#statusText`) updates through `window.SimStatus()` at each transition.
 
 ### The two-LLM pattern
 
