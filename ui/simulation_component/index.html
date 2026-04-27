@@ -307,9 +307,6 @@
 </head>
 <body>
 
-<!-- Hidden audio element for TTS playback -->
-<audio id="sim-tts-audio" style="display:none" preload="auto"></audio>
-
 <!-- Top bar -->
 <div id="topBar">
   <span class="tb-label">Real Simulation Mode</span>
@@ -485,58 +482,69 @@ window.addEventListener('blur', function () {
 window.addEventListener('focus', function () { _lastHidden = false; });
 
 // ── Web Audio API ───────────────────────────────────────────────────────────
-var _audioEl     = document.getElementById('sim-tts-audio');
-var _audioCtx    = null;
-var _analyser    = null;
-var _freqData    = null;
+// AudioContext + AnalyserNode only (no MediaElementSource).
+// Audio is decoded via decodeAudioData and played through a BufferSourceNode
+// that connects directly to the analyser.  Because the AudioContext is created
+// inside a user-gesture handler (fsBtn click), subsequent BufferSource.start()
+// calls are NOT subject to browser autoplay restrictions.
+var _audioCtx     = null;
+var _analyser     = null;
+var _freqData     = null;
 var _playingAudio = false;
+var _currentSrc   = null;   // currently playing AudioBufferSourceNode
+var _pendingAudio = null;   // base64 waiting to play until after fsBtn click
 
 function _initWebAudio() {
   if (_audioCtx) return;
   try {
-    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    var source = _audioCtx.createMediaElementSource(_audioEl);
+    _audioCtx  = new (window.AudioContext || window.webkitAudioContext)();
     _analyser  = _audioCtx.createAnalyser();
     _analyser.fftSize = 256;
     _freqData  = new Uint8Array(_analyser.frequencyBinCount);
-    source.connect(_analyser);
     _analyser.connect(_audioCtx.destination);
   } catch (e) {
     _audioCtx = null;
-    _analyser  = null;
-    _freqData  = null;
+    _analyser = null;
+    _freqData = null;
   }
 }
 
 // ── TTS audio playback ──────────────────────────────────────────────────────
-function _base64ToBytes(b64) {
-  var raw  = atob(b64);
-  var len  = raw.length;
-  var buf  = new Uint8Array(len);
-  for (var i = 0; i < len; i++) buf[i] = raw.charCodeAt(i);
-  return buf;
-}
-
 window.SimPlayAudio = function (base64Mp3) {
+  if (!_audioCtx) {
+    // AudioContext not yet initialised (user hasn't clicked fsBtn).
+    // Queue the audio so it fires immediately on that gesture.
+    _pendingAudio = base64Mp3;
+    return;
+  }
+
+  // Stop any currently playing source cleanly
+  if (_currentSrc) {
+    try { _currentSrc.stop(); } catch (e) { /* already stopped */ }
+    _currentSrc = null;
+  }
+
   try {
-    var blob = new Blob([_base64ToBytes(base64Mp3)], { type: 'audio/mpeg' });
-    var url  = URL.createObjectURL(blob);
-    _audioEl.src = url;
-    window.SimStatus && window.SimStatus('Speaking...');
-    _playingAudio = true;
+    var raw = atob(base64Mp3);
+    var buf = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) buf[i] = raw.charCodeAt(i);
 
-    _audioEl.play().catch(function () {
+    _audioCtx.decodeAudioData(buf.buffer, function (decoded) {
+      _currentSrc = _audioCtx.createBufferSource();
+      _currentSrc.buffer = decoded;
+      _currentSrc.connect(_analyser);
+      _playingAudio = true;
+      window.SimStatus && window.SimStatus('Speaking...');
+      _currentSrc.start(0);
+      _currentSrc.onended = function () {
+        _playingAudio  = false;
+        _currentSrc    = null;
+        window.SimStatus && window.SimStatus('Your turn');
+      };
+    }, function (e) {
       _playingAudio = false;
       window.SimStatus && window.SimStatus('Your turn');
-      URL.revokeObjectURL(url);
     });
-
-    _audioEl.onended = function () {
-      _playingAudio = false;
-      _audioEl.src  = '';
-      URL.revokeObjectURL(url);
-      window.SimStatus && window.SimStatus('Your turn');
-    };
   } catch (e) {
     _playingAudio = false;
     window.SimStatus && window.SimStatus('Your turn');
@@ -689,6 +697,12 @@ function _requestFullscreen() {
 document.getElementById('fsBtn').addEventListener('click', function () {
   _initWebAudio(); // must init on user gesture
   _requestFullscreen();
+  // Drain any audio that arrived before the user clicked (e.g. the greeting)
+  if (_pendingAudio) {
+    var toPlay = _pendingAudio;
+    _pendingAudio = null;
+    window.SimPlayAudio(toPlay);
+  }
 });
 
 document.getElementById('reenterBtn').addEventListener('click', _requestFullscreen);
@@ -721,11 +735,12 @@ document.getElementById('stopBtn').addEventListener('click', function () {
 
   interviewActive = false;
 
-  // Stop TTS audio
-  if (_audioEl) {
-    _audioEl.pause();
-    _audioEl.src = '';
+  // Stop any playing audio
+  if (_currentSrc) {
+    try { _currentSrc.stop(); } catch (e) { /* already done */ }
+    _currentSrc = null;
   }
+  _pendingAudio = null;
   _playingAudio = false;
 
   // Stop webcam tracks

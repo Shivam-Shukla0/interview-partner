@@ -61,7 +61,8 @@ def _save_state(state: InterviewState) -> None:
 def _reset() -> None:
     _sim_keys = [
         "_sim_audio_b64", "_sim_audio_seq", "_sim_last_mic_transcript",
-        "_sim_start_time", "_sim_was_simulation", "_sim_duration_secs",
+        "_sim_last_spoken_idx", "_sim_start_time",
+        "_sim_was_simulation", "_sim_duration_secs",
         "sim_focus_shifts", "sim_fullscreen_exits", "_mode_force",
     ]
     audio_keys = [k for k in st.session_state if isinstance(k, str) and k.startswith("audio_")]
@@ -232,6 +233,28 @@ if _mode == "Real Simulation":
         st.session_state["_mode_force"]  = "Practice Mode"
         st.rerun()
 
+    # ── Auto-greet: generate TTS for any new bot message not yet sent ────────
+    # This fires on the first entry (greeting) and after every agent.turn()
+    # that the transcript handler has not already processed.
+    _all_bot_msgs = [m for m in state.messages if m["role"] == "assistant"]
+    _last_spoken_idx = st.session_state.get("_sim_last_spoken_idx", -1)
+    if _all_bot_msgs and (len(_all_bot_msgs) - 1) > _last_spoken_idx:
+        _new_bot_idx  = len(_all_bot_msgs) - 1
+        _new_bot_text = _all_bot_msgs[_new_bot_idx]["content"]
+        st.session_state["_sim_last_spoken_idx"] = _new_bot_idx
+        if not voice_muted:
+            try:
+                from ui.voice_component import text_to_speech_audio
+                _ab = text_to_speech_audio(_new_bot_text)
+                _seq = st.session_state.get("_sim_audio_seq", 0) + 1
+                st.session_state["_sim_audio_b64"] = _b64.b64encode(_ab).decode("utf-8")
+                st.session_state["_sim_audio_seq"] = _seq
+            except Exception:
+                st.session_state["_sim_audio_b64"] = None
+        else:
+            st.session_state["_sim_audio_b64"] = None
+        st.rerun()
+
     # Render the simulation component, passing audio args
     _sim_data = _SIM_COMPONENT(
         key="sim_v1",
@@ -297,9 +320,12 @@ if _mode == "Real Simulation":
             _, updated_state = agent.turn(state, _sim_transcript)
         _save_state(updated_state)
 
-        # Generate TTS for the latest bot message
+        # Generate TTS for the latest bot message and mark as spoken so the
+        # auto-greet block above does not redundantly re-generate it.
         bot_msgs = [m for m in updated_state.messages if m["role"] == "assistant"]
         if bot_msgs:
+            _spoken_idx = len(bot_msgs) - 1
+            st.session_state["_sim_last_spoken_idx"] = _spoken_idx
             bot_text = bot_msgs[-1]["content"]
             if not voice_muted:
                 try:
