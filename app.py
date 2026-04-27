@@ -60,8 +60,8 @@ def _save_state(state: InterviewState) -> None:
 
 def _reset() -> None:
     _sim_keys = [
-        "_sim_audio_b64", "_sim_audio_seq", "_sim_last_mic_transcript",
-        "_sim_last_spoken_idx", "_sim_start_time",
+        "_sim_audio_b64", "_sim_audio_seq",
+        "_sim_last_speak_seq", "_sim_last_spoken_idx", "_sim_start_time",
         "_sim_was_simulation", "_sim_duration_secs",
         "sim_focus_shifts", "sim_fullscreen_exits", "_mode_force",
     ]
@@ -266,6 +266,8 @@ if _mode == "Real Simulation":
             "fullscreen_exits": 0,
             "stop_requested": False,
             "last_event": None,
+            "transcript": None,
+            "speak_event_seq": 0,
         },
     )
 
@@ -273,6 +275,45 @@ if _mode == "Real Simulation":
         # Persist live tracking data for feedback report
         st.session_state["sim_focus_shifts"]     = _sim_data.get("focus_shifts", 0)
         st.session_state["sim_fullscreen_exits"] = _sim_data.get("fullscreen_exits", 0)
+
+        # ── Transcript from in-component Speak button (SpeechRecognition) ────
+        _inline_transcript = (_sim_data.get("transcript") or "").strip()
+        _inline_seq        = _sim_data.get("speak_event_seq", 0)
+        _last_inline_seq   = st.session_state.get("_sim_last_speak_seq", -1)
+
+        if _inline_transcript and _inline_seq != _last_inline_seq:
+            st.session_state["_sim_last_speak_seq"] = _inline_seq
+            state = _get_state()
+            agent = _get_agent()
+            with st.spinner("Thinking…"):
+                _, updated_state = agent.turn(state, _inline_transcript)
+            _save_state(updated_state)
+
+            bot_msgs = [m for m in updated_state.messages if m["role"] == "assistant"]
+            if bot_msgs:
+                _spoken_idx = len(bot_msgs) - 1
+                st.session_state["_sim_last_spoken_idx"] = _spoken_idx
+                bot_text = bot_msgs[-1]["content"]
+                if not voice_muted:
+                    try:
+                        from ui.voice_component import text_to_speech_audio
+                        with st.spinner("Generating voice…"):
+                            _audio_bytes = text_to_speech_audio(bot_text)
+                        _seq = st.session_state.get("_sim_audio_seq", 0) + 1
+                        st.session_state["_sim_audio_b64"] = _b64.b64encode(_audio_bytes).decode("utf-8")
+                        st.session_state["_sim_audio_seq"] = _seq
+                    except Exception:
+                        st.session_state["_sim_audio_b64"] = None
+                else:
+                    st.session_state["_sim_audio_b64"] = None
+
+            if updated_state.phase == InterviewPhase.FEEDBACK and updated_state.feedback_result:
+                _dur = int(_time.time() - st.session_state.get("_sim_start_time", _time.time()))
+                st.session_state["_sim_was_simulation"] = True
+                st.session_state["_sim_duration_secs"]  = _dur
+                st.session_state["_active_mode"]         = "Practice Mode"
+                st.session_state["_mode_force"]          = "Practice Mode"
+            st.rerun()
 
         # ── Stop requested by user (confirmed dialog in JS) ──────────────────
         if _sim_data.get("stop_requested"):
@@ -296,59 +337,6 @@ if _mode == "Real Simulation":
             st.session_state["_active_mode"]         = "Practice Mode"
             st.session_state["_mode_force"]          = "Practice Mode"
             st.rerun()
-
-    # ── Voice input via streamlit-mic-recorder (rendered below the component) ─
-    # The simulation component is the visual layer; actual STT happens here.
-    from streamlit_mic_recorder import speech_to_text as _stt
-
-    _sim_transcript = _stt(
-        start_prompt="🎤 Speak",
-        stop_prompt="⏹  Stop",
-        just_once=False,
-        use_container_width=True,
-        language="en",
-        key="sim_stt",
-    )
-
-    # Deduplicate: only process when a genuinely new transcript arrives
-    if _sim_transcript and _sim_transcript != st.session_state.get("_sim_last_mic_transcript"):
-        st.session_state["_sim_last_mic_transcript"] = _sim_transcript
-        state = _get_state()
-        agent = _get_agent()
-
-        with st.spinner("Thinking…"):
-            _, updated_state = agent.turn(state, _sim_transcript)
-        _save_state(updated_state)
-
-        # Generate TTS for the latest bot message and mark as spoken so the
-        # auto-greet block above does not redundantly re-generate it.
-        bot_msgs = [m for m in updated_state.messages if m["role"] == "assistant"]
-        if bot_msgs:
-            _spoken_idx = len(bot_msgs) - 1
-            st.session_state["_sim_last_spoken_idx"] = _spoken_idx
-            bot_text = bot_msgs[-1]["content"]
-            if not voice_muted:
-                try:
-                    from ui.voice_component import text_to_speech_audio
-                    with st.spinner("Generating voice…"):
-                        _audio_bytes = text_to_speech_audio(bot_text)
-                    _seq = st.session_state.get("_sim_audio_seq", 0) + 1
-                    st.session_state["_sim_audio_b64"] = _b64.b64encode(_audio_bytes).decode("utf-8")
-                    st.session_state["_sim_audio_seq"] = _seq
-                except Exception:
-                    st.session_state["_sim_audio_b64"] = None
-            else:
-                st.session_state["_sim_audio_b64"] = None
-
-        # If interview finished naturally, flip to Practice Mode for feedback display
-        if updated_state.phase == InterviewPhase.FEEDBACK and updated_state.feedback_result:
-            _dur = int(_time.time() - st.session_state.get("_sim_start_time", _time.time()))
-            st.session_state["_sim_was_simulation"] = True
-            st.session_state["_sim_duration_secs"]  = _dur
-            st.session_state["_active_mode"]         = "Practice Mode"
-            st.session_state["_mode_force"]          = "Practice Mode"
-
-        st.rerun()
 
     st.stop()
 
