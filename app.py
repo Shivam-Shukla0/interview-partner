@@ -62,7 +62,7 @@ def _reset() -> None:
     _sim_keys = [
         "_sim_audio_b64", "_sim_audio_seq", "_sim_last_mic_transcript",
         "_sim_start_time", "_sim_was_simulation", "_sim_duration_secs",
-        "sim_focus_shifts", "sim_fullscreen_exits",
+        "sim_focus_shifts", "sim_fullscreen_exits", "_mode_force",
     ]
     audio_keys = [k for k in st.session_state if isinstance(k, str) and k.startswith("audio_")]
     for key in [
@@ -169,10 +169,14 @@ _MODES = ["Practice Mode", "Real Simulation"]
 if "_active_mode" not in st.session_state:
     st.session_state["_active_mode"] = "Practice Mode"
 
-# Sync the radio-widget key to the authoritative mode BEFORE the widget renders.
-# This is the only correct way to control a widget's value in Streamlit — setting
-# session_state[key] after the widget raises StreamlitAPIException.
-st.session_state["interview_mode"] = st.session_state.get("_active_mode", "Practice Mode")
+# When a programmatic mode reset is needed (e.g. after Stop Interview), the code
+# sets _mode_force = <target_mode> and calls st.rerun().  On that next run we
+# apply the forced value *before* the widget renders (the only safe time to write
+# a widget-bound key).  We do NOT do this on every run — doing so would silently
+# swallow the user's own radio clicks.
+_forced_mode = st.session_state.pop("_mode_force", None)
+if _forced_mode is not None:
+    st.session_state["interview_mode"] = _forced_mode
 
 _selected_mode = st.radio(
     "Interview Mode",
@@ -201,8 +205,8 @@ if _selected_mode != _active_mode:
                 st.rerun()
         with _sc2:
             if st.button("Cancel", key="_mode_no"):
-                # Do NOT touch the widget-bound key here; the pre-radio sync on
-                # the next run will restore the radio to reflect _active_mode.
+                # Force the radio back to the current active mode on next render
+                st.session_state["_mode_force"] = _active_mode
                 st.rerun()
     else:
         st.session_state["_active_mode"] = _selected_mode
@@ -225,6 +229,7 @@ if _mode == "Real Simulation":
         st.session_state["_sim_was_simulation"] = True
         st.session_state["_sim_duration_secs"] = _dur
         st.session_state["_active_mode"] = "Practice Mode"
+        st.session_state["_mode_force"]  = "Practice Mode"
         st.rerun()
 
     # Render the simulation component, passing audio args
@@ -266,6 +271,7 @@ if _mode == "Real Simulation":
             st.session_state["_sim_was_simulation"] = True
             st.session_state["_sim_duration_secs"]  = _dur
             st.session_state["_active_mode"]         = "Practice Mode"
+            st.session_state["_mode_force"]          = "Practice Mode"
             st.rerun()
 
     # ── Voice input via streamlit-mic-recorder (rendered below the component) ─
@@ -314,6 +320,7 @@ if _mode == "Real Simulation":
             st.session_state["_sim_was_simulation"] = True
             st.session_state["_sim_duration_secs"]  = _dur
             st.session_state["_active_mode"]         = "Practice Mode"
+            st.session_state["_mode_force"]          = "Practice Mode"
 
         st.rerun()
 
