@@ -187,6 +187,3 @@ Detection is LLM-based — the planner classifies each turn, no keyword matching
 
 ---
 
-## License
-
-MIT
