@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Real Simulation Interview</title>
+  <!-- MediaPipe Tasks Vision — face detection (loads WASM model ~10 MB on first use) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9/vision_bundle.js" crossorigin="anonymous"></script>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -55,6 +57,21 @@
       color: #fff;
       box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
     }
+
+    #faceCounter {
+      font-size: 14px;
+      font-weight: 700;
+      color: rgba(255, 255, 255, 0.55);
+      background: rgba(255, 255, 255, 0.1);
+      padding: 4px 14px;
+      border-radius: 20px;
+      letter-spacing: 0.02em;
+      transition: color 0.3s, background 0.3s;
+    }
+
+    #faceCounter.face-one  { color: #10B981; background: rgba(16, 185, 129, 0.18); }
+    #faceCounter.face-zero { color: #F59E0B; background: rgba(245, 158, 11,  0.18); }
+    #faceCounter.face-many { color: #EF4444; background: rgba(239, 68,  68,  0.18); }
 
     #timerDisplay {
       color: rgba(255, 255, 255, 0.75);
@@ -419,6 +436,7 @@
 <div id="topBar">
   <span class="tb-label">Real Simulation Mode</span>
   <div id="focusCounter">Focus Shifts: 0</div>
+  <div id="faceCounter">Faces: —</div>
   <div id="timerDisplay">Interview time: 00:00</div>
 </div>
 
@@ -518,7 +536,8 @@ var state = {
   focusShifts:    0,
   fullscreenExits: 0,
   stopRequested:  false,
-  lastEvent:      null
+  lastEvent:      null,
+  faceCount:      0
 };
 
 function sendValue() {
@@ -526,7 +545,8 @@ function sendValue() {
     focus_shifts:     state.focusShifts,
     fullscreen_exits: state.fullscreenExits,
     stop_requested:   state.stopRequested,
-    last_event:       state.lastEvent
+    last_event:       state.lastEvent,
+    face_count:       state.faceCount
   });
 }
 
@@ -901,6 +921,10 @@ function _startCamera() {
       _webcamEl.srcObject = stream;
       _webcamEl.style.display = 'block';
       _camHolder.style.display = 'none';
+      // Start face detection once the first video frame is ready
+      _webcamEl.addEventListener('loadeddata', function () {
+        _initFaceDetector();
+      }, { once: true });
     })
     .catch(function (err) {
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
@@ -909,6 +933,82 @@ function _startCamera() {
         _camMsg.textContent = 'Camera unavailable: ' + (err.message || err.name);
       }
     });
+}
+
+// ── Face detection (MediaPipe Tasks Vision) ─────────────────────────────────
+var _faceCountEl      = document.getElementById('faceCounter');
+var _faceDetector     = null;
+var _faceDetRunning   = false;
+var _lastDetectMs     = 0;
+var _lastFaceSendMs   = 0;
+var _FACE_INTERVAL    = 100;   // ~10 FPS
+var _FACE_SEND_GAP    = 2000;  // send face_count to Python every 2 s
+
+function _updateFaceUI(count) {
+  _faceCountEl.textContent = 'Faces: ' + count;
+  _faceCountEl.className   = count === 0 ? 'face-zero'
+                           : count === 1 ? 'face-one'
+                           :               'face-many';
+  state.faceCount = count;
+  var now = Date.now();
+  if (now - _lastFaceSendMs >= _FACE_SEND_GAP) {
+    _lastFaceSendMs = now;
+    sendValue();
+  }
+}
+
+function _runFaceDetection() {
+  if (!_faceDetRunning || !_faceDetector) return;
+  var now = performance.now();
+  if (now - _lastDetectMs >= _FACE_INTERVAL) {
+    _lastDetectMs = now;
+    if (_webcamEl.readyState >= 2 && !_webcamEl.paused && !_webcamEl.ended) {
+      try {
+        var result = _faceDetector.detectForVideo(_webcamEl, now);
+        _updateFaceUI(result.detections.length);
+      } catch (e) { /* transient errors — ignore */ }
+    }
+  }
+  requestAnimationFrame(_runFaceDetection);
+}
+
+function _stopFaceDetection() {
+  _faceDetRunning = false;
+  if (_faceDetector) {
+    try { _faceDetector.close(); } catch (e) {}
+    _faceDetector = null;
+  }
+}
+
+async function _initFaceDetector() {
+  // Degrade gracefully if the CDN bundle hasn't loaded or WASM init fails
+  if (typeof FilesetResolver === 'undefined' || typeof FaceDetector === 'undefined') {
+    console.warn('[FaceDetect] MediaPipe not loaded — face counter hidden');
+    _faceCountEl.style.display = 'none';
+    return;
+  }
+  _faceCountEl.textContent = 'Loading...';
+  try {
+    var vision = await FilesetResolver.forVisionTasks(
+      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9/wasm'
+    );
+    _faceDetector = await FaceDetector.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath:
+          'https://storage.googleapis.com/mediapipe-models/face_detector/' +
+          'blaze_face_short_range/float16/1/blaze_face_short_range.tflite',
+        delegate: 'GPU'
+      },
+      runningMode: 'VIDEO',
+      minDetectionConfidence: 0.5
+    });
+    _faceCountEl.textContent = 'Faces: 0';
+    _faceDetRunning = true;
+    _runFaceDetection();
+  } catch (e) {
+    console.warn('[FaceDetect] init failed:', e);
+    _faceCountEl.style.display = 'none';
+  }
 }
 
 // ── Fullscreen ──────────────────────────────────────────────────────────────
@@ -983,6 +1083,9 @@ document.getElementById('stopBtn').addEventListener('click', function () {
   if (!confirm('Are you sure? This will end the simulation and generate your feedback report.')) return;
 
   interviewActive = false;
+
+  // Stop face detection and release model resources
+  _stopFaceDetection();
 
   // Reset mic-toggle state
   _micActive = false;

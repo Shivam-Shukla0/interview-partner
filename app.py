@@ -63,7 +63,7 @@ def _reset() -> None:
         "_sim_audio_b64", "_sim_audio_seq",
         "_sim_last_mic_transcript", "_sim_last_spoken_idx", "_sim_start_time",
         "_sim_was_simulation", "_sim_duration_secs",
-        "sim_focus_shifts", "sim_fullscreen_exits", "_mode_force",
+        "sim_focus_shifts", "sim_fullscreen_exits", "sim_face_count", "_mode_force",
     ]
     audio_keys = [k for k in st.session_state if isinstance(k, str) and k.startswith("audio_")]
     for key in [
@@ -284,9 +284,10 @@ if _mode == "Real Simulation":
     )
 
     if _sim_data:
-        # Persist live tracking data for feedback report
+        # Persist live tracking data for feedback report / future steps
         st.session_state["sim_focus_shifts"]     = _sim_data.get("focus_shifts", 0)
         st.session_state["sim_fullscreen_exits"] = _sim_data.get("fullscreen_exits", 0)
+        st.session_state["sim_face_count"]       = _sim_data.get("face_count", 0)
 
         # ── Stop requested by user (confirmed dialog in JS) ──────────────────
         if _sim_data.get("stop_requested"):
