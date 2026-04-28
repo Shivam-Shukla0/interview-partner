@@ -9,3 +9,4 @@
 PROGRESS.md
 __pycache__/
 venv/
+.streamlit/secrets.toml
