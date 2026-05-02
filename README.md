@@ -4,7 +4,7 @@ An agentic AI that conducts mock job interviews across 5 roles, adapts to candid
 
 **Built for**: Eightfold.ai AI Agent Building assignment (April 2026)
 
-**Live demo**: https://interview-partner-0.streamlit.app/
+**Live demo**: [https://interview-partner-0.streamlit.app/](https://interview-partner-00.streamlit.app/)
 
 ---
 
